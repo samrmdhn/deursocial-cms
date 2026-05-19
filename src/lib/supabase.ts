@@ -1,13 +1,12 @@
 import { createClient } from '@supabase/supabase-js';
 
-// Use the Vite proxy to avoid exposing the service role key to the browser
-const proxyUrl = typeof window !== 'undefined' ? `${window.location.origin}/supabase-api` : 'http://localhost:5173/supabase-api';
-const dummyKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.dummy.dummy';
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
 
-export const supabase = createClient(proxyUrl, dummyKey, {
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     persistSession: false,
     autoRefreshToken: false,
-    detectSessionInUrl: false
-  }
+    detectSessionInUrl: false,
+  },
 });

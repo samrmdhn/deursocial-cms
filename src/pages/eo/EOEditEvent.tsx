@@ -2,14 +2,17 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from '@tanstack/react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
+import { useAuthStore } from '@/stores/authStore';
 import toast from 'react-hot-toast';
 import { ArrowLeft, Globe, Images, Save, Trash2, Upload, X } from 'lucide-react';
 import { uploadImageToBucket } from '@/lib/upload';
+import CheckinSection from '@/components/CheckinSection';
 
 export default function EOEditEvent() {
   const { eventId } = useParams({ strict: false }) as { eventId: string };
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const authToken = useAuthStore((s) => s.token) ?? '';
 
   const [form, setForm] = useState({
     title: '', description: '', date_start: '', date_end: '',
@@ -366,6 +369,15 @@ export default function EOEditEvent() {
             <input type="file" accept="image/*" multiple className="hidden" onChange={handlePosterChange} />
           </label>
         </div>
+
+        {/* Check-in Configuration */}
+        {event?.slug && (
+          <CheckinSection
+            eventSlug={event.slug}
+            apiBase={import.meta.env.VITE_API_BASE_URL ?? ''}
+            token={authToken}
+          />
+        )}
 
         <button type="submit" disabled={updateMutation.isPending}
           className="w-full py-3 bg-violet-600 hover:bg-violet-500 text-white font-semibold rounded-xl transition-all flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer">

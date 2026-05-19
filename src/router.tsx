@@ -31,6 +31,8 @@ import EOMoments from '@/pages/eo/EOMoments';
 import EOPosts from '@/pages/eo/EOPosts';
 import EOBlast from '@/pages/eo/EOBlast';
 import EOAnalytics from '@/pages/eo/EOAnalytics';
+import EOCheckinDashboard from '@/pages/eo/EOCheckinDashboard';
+import AdminBackgrounds from '@/pages/admin/AdminBackgrounds';
 
 // Root route
 const rootRoute = createRootRoute({
@@ -220,6 +222,18 @@ const eoAnalyticsRoute = createRoute({
   component: EOAnalytics,
 });
 
+const eoCheckinDashboardRoute = createRoute({
+  getParentRoute: () => eoLayoutRoute,
+  path: '/events/$eventSlug/checkins',
+  component: EOCheckinDashboard,
+});
+
+const adminBackgroundsRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/backgrounds',
+  component: AdminBackgrounds,
+});
+
 // Build route tree
 const routeTree = rootRoute.addChildren([
   indexRoute,
@@ -238,6 +252,7 @@ const routeTree = rootRoute.addChildren([
     adminReportsRoute,
     adminFeaturedAdsRoute,
     adminTrendingRoute,
+    adminBackgroundsRoute,
   ]),
   eoLayoutRoute.addChildren([
     eoDashboardRoute,
@@ -249,6 +264,7 @@ const routeTree = rootRoute.addChildren([
     eoPostsRoute,
     eoBlastRoute,
     eoAnalyticsRoute,
+    eoCheckinDashboardRoute,
   ]),
 ]);
 
