@@ -1,12 +1,28 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
-import { useAuthStore } from '@/stores/authStore';
 import api from '@/lib/api';
+import { useAuthStore } from '@/stores/authStore';
 import toast from 'react-hot-toast';
-import { Send, FileText, Upload, X, Crop as CropIcon, LayoutList, Heart, MessageCircle, ChevronLeft, ChevronRight, Reply } from 'lucide-react';
+import { Send, Upload, X, Crop as CropIcon, Plus } from 'lucide-react';
 import { uploadImageToBucket } from '@/lib/upload';
 import ImageCropper from '@/components/ImageCropper';
+import PostCard from '@/components/PostCard';
+import MentionInput from '@/components/MentionInput';
+
+const SUPABASE_POST_IMAGES = `${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/post-images/`;
+const SUPABASE_PROFILE_IMAGES = `${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/profile-images/`;
+
+function resolveImageUrl(path: string): string {
+  if (!path) return '';
+  if (path.startsWith('http')) return path;
+  if (path.startsWith('/images/')) return `${SUPABASE_PROFILE_IMAGES}${path.slice(1)}`;
+  if (path.startsWith('posts/')) return `${SUPABASE_POST_IMAGES}${path}`;
+  if (path.startsWith('images/')) return `${SUPABASE_PROFILE_IMAGES}${path}`;
+  return `${SUPABASE_POST_IMAGES}${path}`;
+}
+
+type Sort = 'newest' | 'popular' | 'official';
 
 interface PostImage {
   file?: File;
@@ -14,67 +30,111 @@ interface PostImage {
   blob?: Blob;
 }
 
-const IMG_BASE = `${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/post-images/`;
-const resolveImg = (f: string) => (f?.startsWith('http') ? f : `${IMG_BASE}${f}`);
+const inp: React.CSSProperties = { width: '100%', padding: '9px 12px', background: '#080808', border: '1px solid #1e1e1e', borderRadius: 5, color: '#e0e0e0', fontSize: 12, outline: 'none', boxSizing: 'border-box' };
 
 export default function EOPosts() {
   const user = useAuthStore((s) => s.user);
   const eoId = user?.eo_id;
   const queryClient = useQueryClient();
 
-  const [activeTab, setActiveTab] = useState<'create' | 'browse'>('create');
+  const [sort, setSort] = useState<Sort>('newest');
   const [selectedEvent, setSelectedEvent] = useState('');
-  const [browseEvent, setBrowseEvent] = useState('');
+  const [page, setPage] = useState(1);
+  const [showCreate, setShowCreate] = useState(false);
+  const [createEvent, setCreateEvent] = useState('');
   const [caption, setCaption] = useState('');
   const [images, setImages] = useState<PostImage[]>([]);
   const [croppingIndex, setCroppingIndex] = useState<number | null>(null);
-  const [browsePage, setBrowsePage] = useState(1);
-  const [selectedPostSlug, setSelectedPostSlug] = useState<string | null>(null);
-  const [replyingTo, setReplyingTo] = useState<{ commentId: number } | null>(null);
-  const [replyText, setReplyText] = useState('');
+  const [cropAspect, setCropAspect] = useState<number>(0);
 
   const { data: events } = useQuery({
     queryKey: ['eo', 'events-for-posts', eoId],
     queryFn: async () => {
       if (!eoId) return [];
-      const { data } = await supabase
-        .from('ir_content_details')
-        .select('id, title, slug')
-        .eq('event_organizers_id', eoId)
-        .order('created_at', { ascending: false });
+      const { data } = await supabase.from('ir_content_details').select('id, title, slug').eq('event_organizers_id', eoId).order('created_at', { ascending: false });
       return data || [];
     },
     enabled: !!eoId,
   });
 
-  const { data: browsePosts, isLoading: browseLoading } = useQuery({
-    queryKey: ['eo', 'browse-posts', browseEvent, browsePage],
+  const PAGE_SIZE = 30;
+
+  // Fetch all posts across EO events, paginate client-side
+  const { data: allPostsData, isLoading } = useQuery({
+    queryKey: ['eo', 'posts-all', eoId, sort, selectedEvent],
     queryFn: async () => {
-      if (!browseEvent) return null;
-      const eventSlug = events?.find((e) => String(e.id) === browseEvent)?.slug;
-      if (!eventSlug) return null;
-      const res = await api.get(`/api/eo/events/${eventSlug}/posts`, { params: { page: browsePage, limit: 20 } });
-      return res.data;
+      if (!eoId || !events || !events.length) return [];
+
+      const mapPost = (p: any) => ({
+        id: p.slug,
+        slug: p.slug,
+        caption_post: p.caption ?? null,
+        file: null,
+        created_at: Math.floor(new Date(p.created_at).getTime() / 1000),
+        event_title: p.event?.title || p.event?.slug || '—',
+        files: (p.images || []).map((img: any, i: number) => ({
+          id: i,
+          file: resolveImageUrl(img.image ?? img.file ?? ''),
+        })),
+        author: {
+          display_name: p.user?.name ?? 'User',
+          username: p.user?.username ?? '',
+          photo: p.user?.image ? resolveImageUrl(p.user.image) : null,
+        },
+        like_count: Number(p.total_likes ?? 0),
+        comment_count: Number(p.total_comments ?? 0),
+        is_liked: p.is_liked ?? false,
+        group: p.group ?? null,
+        _raw_slug: p.slug,
+        users_id: p.users_id,
+      });
+
+      const sortParam = sort === 'official' ? 'newest' : sort;
+
+      if (selectedEvent) {
+        // Single event — fetch up to 200 (backend handles it correctly)
+        const params: Record<string, any> = { page: 1, limit: 200, sort: sortParam, event_slug: selectedEvent };
+        if (sort === 'official') params.official = 1;
+        const res = await api.get('/api/eo/posts', { params });
+        return (res.data?.data ?? []).map(mapPost);
+      }
+
+      // All EO events — parallel fetch per slug, merge
+      const slugs = events.map((e: any) => e.slug);
+      const results = await Promise.all(
+        slugs.map(async (slug: string) => {
+          const params: Record<string, any> = { page: 1, limit: 200, sort: sortParam, event_slug: slug };
+          if (sort === 'official') params.official = 1;
+          const res = await api.get('/api/eo/posts', { params });
+          return (res.data?.data ?? []).map(mapPost);
+        })
+      );
+      const merged: any[] = results.flat();
+      // Deduplicate by slug
+      const seen = new Set<string>();
+      const deduped = merged.filter((p) => { if (seen.has(p.slug)) return false; seen.add(p.slug); return true; });
+      // Sort merged results
+      if (sort === 'popular') {
+        deduped.sort((a, b) => (b.like_count + b.comment_count * 2) - (a.like_count + a.comment_count * 2));
+      } else {
+        deduped.sort((a, b) => b.created_at - a.created_at);
+      }
+      return deduped;
     },
-    enabled: !!browseEvent && !!events,
+    enabled: !!eoId && !!events,
   });
 
-  const { data: comments } = useQuery({
-    queryKey: ['eo', 'post-comments', selectedPostSlug],
-    queryFn: async () => {
-      if (!selectedPostSlug) return [];
-      const res = await api.get(`/api/comment/post/${selectedPostSlug}`);
-      return res.data?.data || [];
-    },
-    enabled: !!selectedPostSlug,
-  });
+  const allPosts = allPostsData ?? [];
+  const totalPosts = allPosts.length;
+  const totalPages = Math.ceil(totalPosts / PAGE_SIZE);
+  const pagedPosts = allPosts.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
-    if (images.length + files.length > 3) { toast.error('Maximum 3 images allowed'); return; }
-    files.forEach(file => {
+    if (images.length + files.length > 3) { toast.error('Maximum 3 images'); return; }
+    files.forEach((file) => {
       const reader = new FileReader();
-      reader.onloadend = () => setImages(prev => [...prev, { file, preview: reader.result as string }]);
+      reader.onloadend = () => setImages((prev) => [...prev, { file, preview: reader.result as string }]);
       reader.readAsDataURL(file);
     });
   };
@@ -82,17 +142,16 @@ export default function EOPosts() {
   const handleCropComplete = (blob: Blob) => {
     if (croppingIndex !== null) {
       const preview = URL.createObjectURL(blob);
-      setImages(prev => { const next = [...prev]; next[croppingIndex] = { ...next[croppingIndex], blob, preview }; return next; });
+      setImages((prev) => { const next = [...prev]; next[croppingIndex] = { ...next[croppingIndex], blob, preview }; return next; });
       setCroppingIndex(null);
     }
   };
 
   const createMutation = useMutation({
     mutationFn: async () => {
-      if (!selectedEvent) throw new Error('Select an event');
-      const eventSlug = events?.find((e) => String(e.id) === selectedEvent)?.slug;
+      if (!createEvent) throw new Error('Select an event');
+      const eventSlug = events?.find((e: any) => String(e.id) === createEvent)?.slug;
       if (!eventSlug) throw new Error('Event not found');
-
       const imageUrls = await Promise.all(
         images.map(async (img) => {
           const fileToUpload = img.blob ? new File([img.blob], 'post.jpg', { type: 'image/jpeg' }) : img.file;
@@ -100,222 +159,183 @@ export default function EOPosts() {
           return uploadImageToBucket(fileToUpload, 'post-images', 'official');
         })
       );
-
       const fd = new FormData();
       fd.append('caption_post', caption);
       (imageUrls.filter(Boolean) as string[]).forEach((url) => fd.append('image_urls[]', url));
-
       await api.post(`/api/event/official-posts/${eventSlug}`, fd);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['eo', 'browse-posts'] });
-      toast.success('Official update posted');
-      setCaption(''); setSelectedEvent(''); setImages([]);
+      queryClient.invalidateQueries({ queryKey: ['eo', 'posts'] });
+      toast.success('Post created');
+      setShowCreate(false);
+      setCaption(''); setCreateEvent(''); setImages([]);
     },
-    onError: (err: any) => toast.error(err?.response?.data?.message || 'Failed to post update'),
+    onError: (err: any) => toast.error(err?.response?.data?.message || 'Failed'),
   });
 
-  const likeMutation = useMutation({
-    mutationFn: async (slug: string) => api.post(`/api/event/post/like/${slug}`),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['eo', 'browse-posts'] }),
-    onError: () => toast.error('Failed to toggle like'),
-  });
-
-  const replyMutation = useMutation({
-    mutationFn: async ({ postSlug, commentId, text }: { postSlug: string; commentId: number; text: string }) => {
-      await api.post(`/api/comment/post/${postSlug}`, { comment_post: text, parent_id: commentId });
+  const deleteMutation = useMutation({
+    mutationFn: async (slug: string) => {
+      await api.delete(`/api/event/post/${slug}`);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['eo', 'post-comments', selectedPostSlug] });
-      toast.success('Reply sent');
-      setReplyingTo(null); setReplyText('');
+      queryClient.invalidateQueries({ queryKey: ['eo', 'posts'] });
+      toast.success('Post deleted');
     },
-    onError: () => toast.error('Failed to send reply'),
+    onError: () => toast.error('Failed to delete'),
   });
 
-  const formatDate = (val: string | number) => {
-    const d = typeof val === 'number' ? new Date(val * 1000) : new Date(val);
-    return d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-  };
+  const SORTS: { key: Sort; label: string }[] = [
+    { key: 'newest', label: 'Newest' },
+    { key: 'popular', label: 'Popular' },
+    { key: 'official', label: 'Official' },
+  ];
 
-  const pagination = browsePosts?.meta?.pagination;
+  const posts = pagedPosts;
 
   return (
-    <div className="p-6 lg:p-8 space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-white">Official Posts</h1>
-        <p className="text-slate-400 mt-1">Post and manage official updates</p>
+    <div style={{ padding: '24px 28px 48px' }}>
+      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: 20 }}>
+        <div>
+          <h1 style={{ fontSize: 17, fontWeight: 600, color: '#ececec', letterSpacing: '-0.3px', lineHeight: 1 }}>Posts</h1>
+          <p style={{ fontSize: 11, color: '#555', marginTop: 4 }}>
+            {totalPosts} posts
+          </p>
+        </div>
+        <button onClick={() => setShowCreate((v) => !v)}
+          style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px', background: '#fff', border: 'none', borderRadius: 5, color: '#000', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>
+          {showCreate ? <X size={12} /> : <Plus size={12} />}
+          {showCreate ? 'Cancel' : 'New Post'}
+        </button>
       </div>
 
-      {/* Tabs */}
-      <div className="flex rounded-xl bg-slate-800/50 p-1 w-fit">
-        {(['create', 'browse'] as const).map((tab) => (
-          <button key={tab} onClick={() => setActiveTab(tab)}
-            className={`px-5 py-2 rounded-lg text-sm font-medium transition-all cursor-pointer ${activeTab === tab ? 'bg-violet-600 text-white' : 'text-slate-400 hover:text-white'}`}>
-            {tab === 'create'
-              ? <span className="flex items-center gap-2"><Send size={14} /> Create</span>
-              : <span className="flex items-center gap-2"><LayoutList size={14} /> Browse</span>}
-          </button>
-        ))}
-      </div>
+      {/* Create form */}
+      {showCreate && (
+        <div style={{ background: '#0a0a0a', border: '1px solid #1a1a1a', borderRadius: 6, padding: 20, marginBottom: 20, maxWidth: 560, display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: '#555', letterSpacing: '0.8px', textTransform: 'uppercase' }}>New Post</div>
 
-      {activeTab === 'create' && (
-        <div className="bg-slate-900/50 border border-slate-800/50 rounded-2xl p-6 space-y-4 max-w-2xl">
-          <h2 className="text-sm font-semibold text-slate-300">New Official Update</h2>
-          <select value={selectedEvent} onChange={(e) => setSelectedEvent(e.target.value)}
-            className="w-full px-4 py-2.5 bg-slate-800/50 border border-slate-700/50 rounded-xl text-white text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/50">
-            <option value="">Select event...</option>
-            {events?.map((e) => <option key={e.id} value={e.id}>{e.title}</option>)}
-          </select>
-          <textarea value={caption} onChange={(e) => setCaption(e.target.value)}
-            placeholder="Write your official update..."
-            className="w-full px-4 py-3 bg-slate-800/50 border border-slate-700/50 rounded-xl text-white text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/50 h-24 resize-none" />
-          <div className="flex flex-wrap gap-3">
-            {images.map((img, index) => (
-              <div key={index} className="relative w-24 h-24 rounded-xl overflow-hidden border border-slate-700/50 group">
-                <img src={img.preview} alt="" className="w-full h-full object-cover" />
-                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
-                  <button type="button" onClick={() => setCroppingIndex(index)} className="p-1.5 bg-violet-600 hover:bg-violet-500 text-white rounded-lg"><CropIcon size={14} /></button>
-                  <button type="button" onClick={() => setImages(prev => prev.filter((_, i) => i !== index))} className="p-1.5 bg-red-600 hover:bg-red-500 text-white rounded-lg"><X size={14} /></button>
-                </div>
-              </div>
-            ))}
-            {images.length < 3 && (
-              <label className="w-24 h-24 flex flex-col items-center justify-center bg-slate-800 hover:bg-slate-700 text-slate-400 rounded-xl cursor-pointer border border-slate-700/50 border-dashed">
-                <Upload size={20} /><span className="text-[10px] mt-1">Add Photo</span>
-                <input type="file" accept="image/*" className="hidden" onChange={handleImageChange} />
-              </label>
-            )}
+          {/* Event selector */}
+          <div>
+            <label style={{ display: 'block', fontSize: 11, fontWeight: 500, color: '#555', marginBottom: 6 }}>Event *</label>
+            <select value={createEvent} onChange={(e) => setCreateEvent(e.target.value)} style={inp}>
+              <option value="">Select event…</option>
+              {events?.map((e: any) => <option key={e.id} value={e.id}>{e.title}</option>)}
+            </select>
           </div>
-          <button onClick={() => createMutation.mutate()} disabled={!selectedEvent || !caption || createMutation.isPending}
-            className="px-6 py-2.5 bg-violet-600 hover:bg-violet-500 text-white font-medium rounded-xl transition-all flex items-center gap-2 disabled:opacity-50 cursor-pointer">
-            <Send size={16} /> Post Update
+
+          {/* Caption */}
+          <div>
+            <label style={{ display: 'block', fontSize: 11, fontWeight: 500, color: '#555', marginBottom: 6 }}>Caption *</label>
+            <MentionInput value={caption} onChange={setCaption} placeholder="What's happening at this event? (type @ to mention)" rows={4} />
+            <div style={{ textAlign: 'right', fontSize: 10, color: '#333', marginTop: 4 }}>{caption.length}/500</div>
+          </div>
+
+          {/* Image previews */}
+          {images.length > 0 && (() => {
+            const PREVIEW_W = 120;
+            const aspectRatio = cropAspect || 1;
+            const PREVIEW_H = Math.round(PREVIEW_W / aspectRatio);
+            return (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                {images.map((img, index) => (
+                  <div key={index} style={{ position: 'relative', width: PREVIEW_W, height: PREVIEW_H, borderRadius: 8, overflow: 'hidden', border: '1px solid #1e1e1e', flexShrink: 0, transition: 'height 0.2s' }}>
+                    <img src={img.preview} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, opacity: 0, transition: 'opacity 0.15s' }}
+                      onMouseEnter={(e) => (e.currentTarget.style.opacity = '1')} onMouseLeave={(e) => (e.currentTarget.style.opacity = '0')}>
+                      <button type="button" onClick={() => setCroppingIndex(index)} title="Crop"
+                        style={{ background: 'rgba(0,0,0,0.7)', border: '1px solid #333', color: '#ccc', borderRadius: 4, padding: '5px 6px', cursor: 'pointer', display: 'flex' }}><CropIcon size={12} /></button>
+                      <button type="button" onClick={() => setImages((prev) => prev.filter((_, i) => i !== index))} title="Remove"
+                        style={{ background: 'rgba(0,0,0,0.7)', border: '1px solid #333', color: '#e44', borderRadius: 4, padding: '5px 6px', cursor: 'pointer', display: 'flex' }}><X size={12} /></button>
+                    </div>
+                    <div style={{ position: 'absolute', top: 5, left: 5, background: 'rgba(0,0,0,0.6)', borderRadius: 3, padding: '2px 5px', fontSize: 9, color: '#ccc', fontWeight: 700 }}>{index + 1}</div>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
+
+          {/* Ratio pills — shown when images exist */}
+          {images.length > 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 11, color: '#555', fontWeight: 500 }}>Crop</span>
+              {([['Original', 0], ['1:1', 1], ['4:5', 4/5], ['16:9', 16/9]] as [string, number][]).map(([label, val]) => (
+                <button key={label} type="button" onClick={() => setCropAspect(val)}
+                  style={{ padding: '4px 12px', borderRadius: 20, border: '1px solid', fontSize: 11, fontWeight: 600, cursor: 'pointer', background: cropAspect === val ? '#3b82f6' : 'transparent', color: cropAspect === val ? '#fff' : '#555', borderColor: cropAspect === val ? '#3b82f6' : '#2a2a2a' }}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Add photo button */}
+          {images.length < 3 && (
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '11px 0', borderTop: '1px solid #141414', cursor: 'pointer', color: '#3b82f6', fontSize: 13, fontWeight: 500 }}>
+              <Upload size={15} />
+              Add Photo {images.length > 0 ? `(${images.length}/3)` : ''}
+              <input type="file" accept="image/*" multiple style={{ display: 'none' }} onChange={handleImageChange} />
+            </label>
+          )}
+
+          <button onClick={() => createMutation.mutate()} disabled={!createEvent || !caption.trim() || createMutation.isPending}
+            style={{ padding: '10px', background: '#fff', border: 'none', borderRadius: 5, color: '#000', fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, opacity: (!createEvent || !caption.trim()) ? 0.4 : 1 }}>
+            <Send size={12} /> {createMutation.isPending ? 'Posting…' : 'Post'}
           </button>
         </div>
       )}
 
-      {activeTab === 'browse' && (
-        <div className="space-y-4">
-          <select value={browseEvent} onChange={(e) => { setBrowseEvent(e.target.value); setBrowsePage(1); setSelectedPostSlug(null); }}
-            className="px-4 py-2.5 bg-slate-800/50 border border-slate-700/50 rounded-xl text-white text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/50 w-full max-w-xs">
-            <option value="">Select event to browse...</option>
-            {events?.map((e) => <option key={e.id} value={e.id}>{e.title}</option>)}
-          </select>
+      {/* Filter bar */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 1, background: '#080808', border: '1px solid #1a1a1a', borderRadius: 4, padding: 2 }}>
+          {SORTS.map((s) => (
+            <button key={s.key} onClick={() => { setSort(s.key); setPage(1); }}
+              style={{ padding: '5px 14px', borderRadius: 3, border: 'none', cursor: 'pointer', background: sort === s.key ? '#161616' : 'transparent', color: sort === s.key ? '#d0d0d0' : '#444', fontSize: 11, fontWeight: 500 }}>
+              {s.label}
+            </button>
+          ))}
+        </div>
+        <select value={selectedEvent} onChange={(e) => { setSelectedEvent(e.target.value); setPage(1); }}
+          style={{ padding: '7px 12px', background: '#080808', border: '1px solid #1e1e1e', borderRadius: 5, color: selectedEvent ? '#e0e0e0' : '#555', fontSize: 11, outline: 'none' }}>
+          <option value="">All my events</option>
+          {events?.map((e: any) => <option key={e.id} value={e.slug}>{e.title}</option>)}
+        </select>
+      </div>
 
-          {!browseEvent ? (
-            <div className="py-12 text-center text-slate-500">Select an event to browse its posts</div>
-          ) : browseLoading ? (
-            <div className="py-12 text-center"><div className="w-6 h-6 border-2 border-violet-500/30 border-t-violet-500 rounded-full animate-spin mx-auto" /></div>
-          ) : (
-            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-              {/* Posts list */}
-              <div className="space-y-3">
-                {!browsePosts?.data?.length ? (
-                  <div className="py-8 text-center text-slate-500">No posts in this event</div>
-                ) : (
-                  browsePosts.data.map((post: any) => (
-                    <div key={post.slug}
-                      onClick={() => setSelectedPostSlug(selectedPostSlug === post.slug ? null : post.slug)}
-                      className={`bg-slate-900/50 border rounded-2xl p-4 cursor-pointer transition-all hover:border-slate-600/50 ${selectedPostSlug === post.slug ? 'border-violet-500/50' : 'border-slate-800/50'}`}>
-                      <div className="flex items-start gap-3">
-                        {post.author?.image
-                          ? <img src={resolveImg(post.author.image)} className="w-9 h-9 rounded-full object-cover flex-shrink-0" alt="" />
-                          : <div className="w-9 h-9 rounded-full bg-violet-500/20 flex items-center justify-center flex-shrink-0"><FileText size={14} className="text-violet-400" /></div>}
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm font-medium text-slate-200">{post.author?.name}</span>
-                            {post.is_official && <span className="text-[10px] bg-violet-500/20 text-violet-300 px-2 py-0.5 rounded-full font-medium">Official</span>}
-                          </div>
-                          <span className="text-xs text-slate-500">@{post.author?.username}</span>
-                          <p className="text-sm text-slate-300 mt-1 line-clamp-2">{post.caption}</p>
-                          {post.images?.length > 0 && (
-                            <div className="flex gap-1.5 mt-2 overflow-x-auto">
-                              {post.images.slice(0, 3).map((img: any, i: number) => (
-                                <img key={i} src={resolveImg(img.image || img.file)} className="w-16 h-16 rounded-lg object-cover flex-shrink-0" alt="" />
-                              ))}
-                            </div>
-                          )}
-                          <div className="flex items-center gap-4 mt-2">
-                            <button onClick={(e) => { e.stopPropagation(); likeMutation.mutate(post.slug); }}
-                              className={`flex items-center gap-1 text-xs transition-colors ${post.is_liked ? 'text-red-400' : 'text-slate-500 hover:text-red-400'}`}>
-                              <Heart size={13} fill={post.is_liked ? 'currentColor' : 'none'} /> {post.total_likes}
-                            </button>
-                            <span className="flex items-center gap-1 text-xs text-slate-500">
-                              <MessageCircle size={13} /> {post.total_comments}
-                            </span>
-                            <span className="text-xs text-slate-600 ml-auto">{post.created_at ? formatDate(post.created_at) : ''}</span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  ))
-                )}
+      {/* Posts list */}
+      {!events?.length ? (
+        <div style={{ padding: '48px', textAlign: 'center', fontSize: 12, color: '#333' }}>No events yet</div>
+      ) : isLoading ? (
+        <div style={{ padding: '48px', textAlign: 'center' }}>
+          <div style={{ width: 18, height: 18, border: '2px solid #1a1a1a', borderTopColor: '#444', borderRadius: '50%', margin: '0 auto' }} className="ds-spin" />
+        </div>
+      ) : !posts.length ? (
+        <div style={{ padding: '48px', textAlign: 'center', fontSize: 12, color: '#333' }}>No posts yet</div>
+      ) : (
+        <>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+            {posts.map((post: any) => (
+              <PostCard
+                key={post.id}
+                post={post}
+                onDelete={() => deleteMutation.mutate((post as any)._raw_slug)}
+                queryKey={['eo', 'posts-all', eoId]}
+                showEventLabel={!selectedEvent}
+              />
+            ))}
+          </div>
 
-                {pagination && pagination.total_page > 1 && (
-                  <div className="flex items-center justify-between pt-2">
-                    <button onClick={() => setBrowsePage(p => Math.max(1, p - 1))} disabled={browsePage === 1}
-                      className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 disabled:opacity-30 cursor-pointer transition-all">
-                      <ChevronLeft size={16} />
-                    </button>
-                    <span className="text-xs text-slate-400">Page {pagination.current_page} of {pagination.total_page}</span>
-                    <button onClick={() => setBrowsePage(p => Math.min(pagination.total_page, p + 1))} disabled={browsePage >= pagination.total_page}
-                      className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 disabled:opacity-30 cursor-pointer transition-all">
-                      <ChevronRight size={16} />
-                    </button>
-                  </div>
-                )}
-              </div>
-
-              {/* Comments panel */}
-              {selectedPostSlug && (
-                <div className="bg-slate-900/50 border border-slate-800/50 rounded-2xl p-4 h-fit">
-                  <h3 className="text-sm font-semibold text-slate-300 mb-3">Comments</h3>
-                  <div className="space-y-3 max-h-[480px] overflow-y-auto pr-1">
-                    {!comments?.length ? (
-                      <p className="text-xs text-slate-500 py-4 text-center">No comments yet</p>
-                    ) : comments.map((c: any) => (
-                      <div key={c.id} className="space-y-2">
-                        <div className="bg-slate-800/50 rounded-xl p-3">
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="text-xs font-medium text-slate-300">@{c.username || c.user?.username}</span>
-                            <button onClick={() => setReplyingTo(replyingTo?.commentId === c.id ? null : { commentId: c.id })}
-                              className="flex items-center gap-1 text-xs text-violet-400 hover:text-violet-300 cursor-pointer">
-                              <Reply size={12} /> Reply
-                            </button>
-                          </div>
-                          <p className="text-sm text-slate-200 mt-1">{c.comment_post || c.text}</p>
-                        </div>
-                        {c.replies?.map((r: any) => (
-                          <div key={r.id} className="ml-6 bg-slate-800/30 rounded-xl p-2.5">
-                            <span className="text-xs font-medium text-slate-400">@{r.username || r.user?.username}</span>
-                            <p className="text-sm text-slate-300 mt-0.5">{r.comment_post || r.text}</p>
-                          </div>
-                        ))}
-                        {replyingTo?.commentId === c.id && (
-                          <div className="ml-6 flex gap-2">
-                            <input value={replyText} onChange={(e) => setReplyText(e.target.value)}
-                              placeholder="Write a reply..."
-                              className="flex-1 px-3 py-2 bg-slate-800 border border-slate-700/50 rounded-lg text-white text-xs focus:outline-none focus:ring-1 focus:ring-violet-500" />
-                            <button onClick={() => replyMutation.mutate({ postSlug: selectedPostSlug, commentId: c.id, text: replyText })}
-                              disabled={!replyText.trim() || replyMutation.isPending}
-                              className="px-3 py-2 bg-violet-600 hover:bg-violet-500 text-white text-xs rounded-lg disabled:opacity-50 cursor-pointer">
-                              Send
-                            </button>
-                            <button onClick={() => { setReplyingTo(null); setReplyText(''); }} className="px-2 py-2 text-slate-400 hover:text-white text-xs cursor-pointer">✕</button>
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
+          {totalPages > 1 && (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 20 }}>
+              <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1}
+                style={{ padding: '5px 14px', background: '#0d0d0d', border: '1px solid #1a1a1a', borderRadius: 4, color: page === 1 ? '#333' : '#aaa', fontSize: 11, cursor: page === 1 ? 'default' : 'pointer' }}>Prev</button>
+              <span style={{ fontSize: 11, color: '#555' }}>{page} / {totalPages}</span>
+              <button onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page === totalPages}
+                style={{ padding: '5px 14px', background: '#0d0d0d', border: '1px solid #1a1a1a', borderRadius: 4, color: page === totalPages ? '#333' : '#aaa', fontSize: 11, cursor: page === totalPages ? 'default' : 'pointer' }}>Next</button>
             </div>
           )}
-        </div>
+        </>
       )}
 
       {croppingIndex !== null && (
-        <ImageCropper src={images[croppingIndex].preview} onCropComplete={handleCropComplete} onCancel={() => setCroppingIndex(null)} aspect={1} />
+        <ImageCropper src={images[croppingIndex].preview} onCropComplete={handleCropComplete} onCancel={() => setCroppingIndex(null)} aspect={cropAspect} />
       )}
     </div>
   );
