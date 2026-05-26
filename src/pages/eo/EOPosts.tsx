@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import api from '@/lib/api';
@@ -24,10 +24,21 @@ function resolveImageUrl(path: string): string {
 
 type Sort = 'newest' | 'popular' | 'official';
 
-interface PostImage {
-  file?: File;
+type RatioOption = { label: string; aspect: [number, number] | null };
+
+const RATIO_OPTIONS: RatioOption[] = [
+  { label: 'Original', aspect: null },
+  { label: '1:1', aspect: [1, 1] },
+  { label: '4:5', aspect: [4, 5] },
+  { label: '16:9', aspect: [16, 9] },
+];
+
+interface PhotoItem {
+  file: File;
   preview: string;
-  blob?: Blob;
+  naturalW: number;
+  naturalH: number;
+  cropOrigin: { x: number; y: number } | null;
 }
 
 const inp: React.CSSProperties = { width: '100%', padding: '9px 12px', background: '#080808', border: '1px solid #1e1e1e', borderRadius: 5, color: '#e0e0e0', fontSize: 12, outline: 'none', boxSizing: 'border-box' };
@@ -43,9 +54,9 @@ export default function EOPosts() {
   const [showCreate, setShowCreate] = useState(false);
   const [createEvent, setCreateEvent] = useState('');
   const [caption, setCaption] = useState('');
-  const [images, setImages] = useState<PostImage[]>([]);
+  const [photos, setPhotos] = useState<PhotoItem[]>([]);
   const [croppingIndex, setCroppingIndex] = useState<number | null>(null);
-  const [cropAspect, setCropAspect] = useState<number>(0);
+  const [selectedRatio, setSelectedRatio] = useState<RatioOption>(RATIO_OPTIONS[0]);
 
   const { data: events } = useQuery({
     queryKey: ['eo', 'events-for-posts', eoId],
@@ -131,20 +142,16 @@ export default function EOPosts() {
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
-    if (images.length + files.length > 3) { toast.error('Maximum 3 images'); return; }
+    if (photos.length + files.length > 3) { toast.error('Maximum 3 images'); return; }
     files.forEach((file) => {
-      const reader = new FileReader();
-      reader.onloadend = () => setImages((prev) => [...prev, { file, preview: reader.result as string }]);
-      reader.readAsDataURL(file);
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+      img.onload = () => {
+        setPhotos((prev) => [...prev, { file, preview: url, naturalW: img.naturalWidth, naturalH: img.naturalHeight, cropOrigin: null }]);
+      };
+      img.src = url;
     });
-  };
-
-  const handleCropComplete = (blob: Blob) => {
-    if (croppingIndex !== null) {
-      const preview = URL.createObjectURL(blob);
-      setImages((prev) => { const next = [...prev]; next[croppingIndex] = { ...next[croppingIndex], blob, preview }; return next; });
-      setCroppingIndex(null);
-    }
+    e.target.value = '';
   };
 
   const createMutation = useMutation({
@@ -153,22 +160,22 @@ export default function EOPosts() {
       const eventSlug = events?.find((e: any) => String(e.id) === createEvent)?.slug;
       if (!eventSlug) throw new Error('Event not found');
       const imageUrls = await Promise.all(
-        images.map(async (img) => {
-          const fileToUpload = img.blob ? new File([img.blob], 'post.jpg', { type: 'image/jpeg' }) : img.file;
-          if (!fileToUpload) return null;
-          return uploadImageToBucket(fileToUpload, 'post-images', 'official');
-        })
+        photos.map((p) => uploadImageToBucket(p.file, 'post-images', 'official'))
       );
       const fd = new FormData();
       fd.append('caption_post', caption);
       (imageUrls.filter(Boolean) as string[]).forEach((url) => fd.append('image_urls[]', url));
+      if (selectedRatio.aspect) {
+        fd.append('crop_aspect', JSON.stringify(selectedRatio.aspect));
+        photos.forEach((p) => fd.append('crop_origins[]', JSON.stringify(p.cropOrigin ?? { x: 0.5, y: 0.5 })));
+      }
       await api.post(`/api/event/official-posts/${eventSlug}`, fd);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['eo', 'posts'] });
       toast.success('Post created');
       setShowCreate(false);
-      setCaption(''); setCreateEvent(''); setImages([]);
+      setCaption(''); setCreateEvent(''); setPhotos([]); setSelectedRatio(RATIO_OPTIONS[0]);
     },
     onError: (err: any) => toast.error(err?.response?.data?.message || 'Failed'),
   });
@@ -230,20 +237,50 @@ export default function EOPosts() {
           </div>
 
           {/* Image previews */}
-          {images.length > 0 && (() => {
+          {photos.length > 0 && (() => {
             const PREVIEW_W = 120;
-            const aspectRatio = cropAspect || 1;
-            const PREVIEW_H = Math.round(PREVIEW_W / aspectRatio);
+            const displayAspect = selectedRatio.aspect ?? [1, 1];
+            const PREVIEW_H = Math.round(PREVIEW_W * (displayAspect[1] / displayAspect[0]));
+
+            function getPreviewImageStyle(photo: PhotoItem): React.CSSProperties {
+              if (!selectedRatio.aspect) {
+                return { width: PREVIEW_W, height: PREVIEW_H, objectFit: 'cover' };
+              }
+              const [aw, ah] = selectedRatio.aspect;
+              const targetRatio = aw / ah;
+              const imageRatio = photo.naturalW / photo.naturalH;
+              let imgScale: number;
+              if (imageRatio > targetRatio) {
+                imgScale = PREVIEW_H / photo.naturalH;
+              } else {
+                imgScale = PREVIEW_W / photo.naturalW;
+              }
+              const renderedW = photo.naturalW * imgScale;
+              const renderedH = photo.naturalH * imgScale;
+              const fx = photo.cropOrigin?.x ?? 0.5;
+              const fy = photo.cropOrigin?.y ?? 0.5;
+              const tx = -fx * Math.max(0, renderedW - PREVIEW_W);
+              const ty = -fy * Math.max(0, renderedH - PREVIEW_H);
+              return { width: renderedW, height: renderedH, transform: `translate(${tx}px, ${ty}px)`, flexShrink: 0 };
+            }
+
             return (
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                {images.map((img, index) => (
-                  <div key={index} style={{ position: 'relative', width: PREVIEW_W, height: PREVIEW_H, borderRadius: 8, overflow: 'hidden', border: '1px solid #1e1e1e', flexShrink: 0, transition: 'height 0.2s' }}>
-                    <img src={img.preview} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                    <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, opacity: 0, transition: 'opacity 0.15s' }}
+                {photos.map((photo, index) => (
+                  <div key={index} style={{ position: 'relative', width: PREVIEW_W, height: PREVIEW_H, borderRadius: 8, overflow: 'hidden', border: '1px solid #1e1e1e', flexShrink: 0 }}>
+                    <img src={photo.preview} alt="" style={{ ...getPreviewImageStyle(photo), display: 'block' }} />
+                    {selectedRatio.aspect && (
+                      <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'rgba(0,0,0,0.35)', paddingBlock: 3, textAlign: 'center', fontSize: 10, color: '#fff', pointerEvents: 'none' }}>
+                        Tap to adjust
+                      </div>
+                    )}
+                    <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, opacity: 0, transition: 'opacity 0.15s', background: 'rgba(0,0,0,0.3)' }}
                       onMouseEnter={(e) => (e.currentTarget.style.opacity = '1')} onMouseLeave={(e) => (e.currentTarget.style.opacity = '0')}>
-                      <button type="button" onClick={() => setCroppingIndex(index)} title="Crop"
-                        style={{ background: 'rgba(0,0,0,0.7)', border: '1px solid #333', color: '#ccc', borderRadius: 4, padding: '5px 6px', cursor: 'pointer', display: 'flex' }}><CropIcon size={12} /></button>
-                      <button type="button" onClick={() => setImages((prev) => prev.filter((_, i) => i !== index))} title="Remove"
+                      {selectedRatio.aspect && (
+                        <button type="button" onClick={() => setCroppingIndex(index)} title="Adjust crop"
+                          style={{ background: 'rgba(0,0,0,0.7)', border: '1px solid #333', color: '#ccc', borderRadius: 4, padding: '5px 6px', cursor: 'pointer', display: 'flex' }}><CropIcon size={12} /></button>
+                      )}
+                      <button type="button" onClick={() => setPhotos((prev) => prev.filter((_, i) => i !== index))} title="Remove"
                         style={{ background: 'rgba(0,0,0,0.7)', border: '1px solid #333', color: '#e44', borderRadius: 4, padding: '5px 6px', cursor: 'pointer', display: 'flex' }}><X size={12} /></button>
                     </div>
                     <div style={{ position: 'absolute', top: 5, left: 5, background: 'rgba(0,0,0,0.6)', borderRadius: 3, padding: '2px 5px', fontSize: 9, color: '#ccc', fontWeight: 700 }}>{index + 1}</div>
@@ -254,23 +291,26 @@ export default function EOPosts() {
           })()}
 
           {/* Ratio pills — shown when images exist */}
-          {images.length > 0 && (
+          {photos.length > 0 && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
               <span style={{ fontSize: 11, color: '#555', fontWeight: 500 }}>Crop</span>
-              {([['Original', 0], ['1:1', 1], ['4:5', 4/5], ['16:9', 16/9]] as [string, number][]).map(([label, val]) => (
-                <button key={label} type="button" onClick={() => setCropAspect(val)}
-                  style={{ padding: '4px 12px', borderRadius: 20, border: '1px solid', fontSize: 11, fontWeight: 600, cursor: 'pointer', background: cropAspect === val ? '#3b82f6' : 'transparent', color: cropAspect === val ? '#fff' : '#555', borderColor: cropAspect === val ? '#3b82f6' : '#2a2a2a' }}>
-                  {label}
-                </button>
-              ))}
+              {RATIO_OPTIONS.map((r) => {
+                const active = selectedRatio.label === r.label;
+                return (
+                  <button key={r.label} type="button" onClick={() => setSelectedRatio(r)}
+                    style={{ padding: '4px 12px', borderRadius: 20, border: '1px solid', fontSize: 11, fontWeight: 600, cursor: 'pointer', background: active ? '#3b82f6' : 'transparent', color: active ? '#fff' : '#555', borderColor: active ? '#3b82f6' : '#2a2a2a' }}>
+                    {r.label}
+                  </button>
+                );
+              })}
             </div>
           )}
 
           {/* Add photo button */}
-          {images.length < 3 && (
+          {photos.length < 3 && (
             <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '11px 0', borderTop: '1px solid #141414', cursor: 'pointer', color: '#3b82f6', fontSize: 13, fontWeight: 500 }}>
               <Upload size={15} />
-              Add Photo {images.length > 0 ? `(${images.length}/3)` : ''}
+              Add Photo {photos.length > 0 ? `(${photos.length}/3)` : ''}
               <input type="file" accept="image/*" multiple style={{ display: 'none' }} onChange={handleImageChange} />
             </label>
           )}
@@ -334,8 +374,19 @@ export default function EOPosts() {
         </>
       )}
 
-      {croppingIndex !== null && (
-        <ImageCropper src={images[croppingIndex].preview} onCropComplete={handleCropComplete} onCancel={() => setCroppingIndex(null)} aspect={cropAspect} />
+      {croppingIndex !== null && selectedRatio.aspect && (
+        <ImageCropper
+          src={photos[croppingIndex].preview}
+          naturalW={photos[croppingIndex].naturalW}
+          naturalH={photos[croppingIndex].naturalH}
+          cropAspect={selectedRatio.aspect}
+          initialOrigin={photos[croppingIndex].cropOrigin}
+          onConfirm={(origin) => {
+            setPhotos((prev) => prev.map((p, i) => i === croppingIndex ? { ...p, cropOrigin: origin } : p));
+            setCroppingIndex(null);
+          }}
+          onCancel={() => setCroppingIndex(null)}
+        />
       )}
     </div>
   );

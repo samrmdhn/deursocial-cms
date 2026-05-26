@@ -1,175 +1,138 @@
-import { useRef, useEffect, useState, useCallback } from 'react';
+import { useRef, useEffect, useCallback } from 'react';
 import { X, Check } from 'lucide-react';
 
 interface ImageCropperProps {
   src: string;
-  aspect?: number; // 0 = original (no crop), else w/h ratio like 1, 0.8, 1.777
-  onCropComplete: (blob: Blob) => void;
+  /** Natural pixel dimensions of the source image */
+  naturalW: number;
+  naturalH: number;
+  /** Crop aspect ratio [w, h] — e.g. [16, 9]. Must be non-null when this modal opens. */
+  cropAspect: [number, number];
+  /** Current origin fraction (null = center) */
+  initialOrigin?: { x: number; y: number } | null;
+  onConfirm: (origin: { x: number; y: number }) => void;
   onCancel: () => void;
 }
 
 const FRAME_W = 560;
 
 /**
- * Pan-to-reposition cropper matching the RN CropEditorModal pattern.
- * User drags the image within a fixed frame. On Done, canvas crops
- * the visible region and returns a Blob.
+ * Pan-to-reposition cropper — exact port of RN CropEditorModal.
+ * User drags the image within a fixed aspect-ratio frame.
+ * On confirm, returns origin fraction {x, y} (0=top/left, 1=bottom/right).
+ * No pixel manipulation — matches RN pattern exactly.
  */
-export default function ImageCropper({ src, aspect = 0, onCropComplete, onCancel }: ImageCropperProps) {
-  const imgRef = useRef<HTMLImageElement>(null);
-  const frameRef = useRef<HTMLDivElement>(null);
+export default function ImageCropper({
+  src,
+  naturalW,
+  naturalH,
+  cropAspect,
+  initialOrigin,
+  onConfirm,
+  onCancel,
+}: ImageCropperProps) {
+  const frameH = Math.round(FRAME_W * (cropAspect[1] / cropAspect[0]));
 
-  // Natural image dimensions
-  const [naturalW, setNaturalW] = useState(0);
-  const [naturalH, setNaturalH] = useState(0);
+  // Scale: make image fill frame so cropW pixels == FRAME_W
+  const targetRatio = cropAspect[0] / cropAspect[1];
+  const imageRatio = naturalW / naturalH;
 
-  // Derived layout (recomputed when natural dims known)
-  const frameH = aspect > 0 ? Math.round(FRAME_W / aspect) : FRAME_W;
+  let cropW: number, cropH: number;
+  if (imageRatio > targetRatio) {
+    cropH = naturalH;
+    cropW = Math.round(naturalH * targetRatio);
+  } else {
+    cropW = naturalW;
+    cropH = Math.round(naturalW / targetRatio);
+  }
 
-  // We'll store the current translate as a ref for perf, and sync to state for re-render
-  const offsetX = useRef(0);
-  const offsetY = useRef(0);
-  const [, forceRender] = useState(0);
+  const scale = FRAME_W / cropW;
+  const displayW = naturalW * scale;
+  const displayH = naturalH * scale;
+  const maxOffsetX = Math.max(0, displayW - FRAME_W);
+  const maxOffsetY = Math.max(0, displayH - frameH);
 
-  const displayW = useRef(0);
-  const displayH = useRef(0);
-  const maxOffsetX = useRef(0);
-  const maxOffsetY = useRef(0);
+  const fractionToOffset = useCallback((fx: number, fy: number) => ({
+    x: -Math.max(0, Math.min(fx * maxOffsetX, maxOffsetX)),
+    y: -Math.max(0, Math.min(fy * maxOffsetY, maxOffsetY)),
+  }), [maxOffsetX, maxOffsetY]);
 
-  const clampOffset = useCallback((ox: number, oy: number) => ({
-    x: Math.min(0, Math.max(-maxOffsetX.current, ox)),
-    y: Math.min(0, Math.max(-maxOffsetY.current, oy)),
-  }), []);
+  const offsetToFraction = (ox: number, oy: number) => ({
+    x: maxOffsetX > 0 ? Math.max(0, Math.min(-ox / maxOffsetX, 1)) : 0.5,
+    y: maxOffsetY > 0 ? Math.max(0, Math.min(-oy / maxOffsetY, 1)) : 0.5,
+  });
 
-  function computeLayout(nw: number, nh: number) {
-    if (!nw || !nh) return;
-    const targetRatio = aspect > 0 ? aspect : nw / nh;
-    const imageRatio = nw / nh;
+  const initial = fractionToOffset(initialOrigin?.x ?? 0.5, initialOrigin?.y ?? 0.5);
+  const offset = useRef({ x: initial.x, y: initial.y });
+  const imgEl = useRef<HTMLImageElement>(null);
 
-    let cropW: number, cropH: number;
-    if (imageRatio > targetRatio) {
-      cropH = nh;
-      cropW = Math.round(nh * targetRatio);
-    } else {
-      cropW = nw;
-      cropH = Math.round(nw / targetRatio);
+  function applyTransform() {
+    if (imgEl.current) {
+      imgEl.current.style.transform = `translate(${offset.current.x}px, ${offset.current.y}px)`;
     }
-
-    const scale = FRAME_W / cropW;
-    displayW.current = nw * scale;
-    displayH.current = nh * scale;
-    maxOffsetX.current = Math.max(0, displayW.current - FRAME_W);
-    maxOffsetY.current = Math.max(0, displayH.current - frameH);
-
-    // Center on reset
-    const c = clampOffset(-maxOffsetX.current * 0.5, -maxOffsetY.current * 0.5);
-    offsetX.current = c.x;
-    offsetY.current = c.y;
-    forceRender(n => n + 1);
   }
 
-  function onImageLoad() {
-    const img = imgRef.current;
-    if (!img) return;
-    setNaturalW(img.naturalWidth);
-    setNaturalH(img.naturalHeight);
-    computeLayout(img.naturalWidth, img.naturalHeight);
-  }
-
-  // Recompute layout when aspect changes (after image already loaded)
   useEffect(() => {
-    if (naturalW && naturalH) computeLayout(naturalW, naturalH);
-  }, [aspect]);
+    const o = fractionToOffset(initialOrigin?.x ?? 0.5, initialOrigin?.y ?? 0.5);
+    offset.current = o;
+    applyTransform();
+  }, [src]);
 
-  // ── Pan gesture ──────────────────────────────────────────────
-  const dragging = useRef(false);
-  const dragStart = useRef({ x: 0, y: 0, ox: 0, oy: 0 });
+  // ── Mouse drag ───────────────────────────────────────────────
+  const drag = useRef({ active: false, startX: 0, startY: 0, ox: 0, oy: 0 });
 
   function onMouseDown(e: React.MouseEvent) {
-    dragging.current = true;
-    dragStart.current = { x: e.clientX, y: e.clientY, ox: offsetX.current, oy: offsetY.current };
+    drag.current = { active: true, startX: e.clientX, startY: e.clientY, ox: offset.current.x, oy: offset.current.y };
     e.preventDefault();
   }
 
   useEffect(() => {
-    function onMouseMove(e: MouseEvent) {
-      if (!dragging.current) return;
-      const dx = e.clientX - dragStart.current.x;
-      const dy = e.clientY - dragStart.current.y;
-      const c = clampOffset(dragStart.current.ox + dx, dragStart.current.oy + dy);
-      offsetX.current = c.x;
-      offsetY.current = c.y;
-      if (imgRef.current) {
-        imgRef.current.style.transform = `translate(${offsetX.current}px, ${offsetY.current}px)`;
-      }
+    function onMove(e: MouseEvent) {
+      if (!drag.current.active) return;
+      const dx = e.clientX - drag.current.startX;
+      const dy = e.clientY - drag.current.startY;
+      offset.current = {
+        x: Math.min(0, Math.max(-maxOffsetX, drag.current.ox + dx)),
+        y: Math.min(0, Math.max(-maxOffsetY, drag.current.oy + dy)),
+      };
+      applyTransform();
     }
-    function onMouseUp() { dragging.current = false; }
+    function onUp() { drag.current.active = false; }
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
+  }, [maxOffsetX, maxOffsetY]);
 
-    window.addEventListener('mousemove', onMouseMove);
-    window.addEventListener('mouseup', onMouseUp);
-    return () => {
-      window.removeEventListener('mousemove', onMouseMove);
-      window.removeEventListener('mouseup', onMouseUp);
-    };
-  }, [clampOffset]);
+  // ── Touch drag ───────────────────────────────────────────────
+  const touch = useRef({ active: false, startX: 0, startY: 0, ox: 0, oy: 0 });
 
-  // ── Touch support ────────────────────────────────────────────
   function onTouchStart(e: React.TouchEvent) {
     const t = e.touches[0];
-    dragging.current = true;
-    dragStart.current = { x: t.clientX, y: t.clientY, ox: offsetX.current, oy: offsetY.current };
+    touch.current = { active: true, startX: t.clientX, startY: t.clientY, ox: offset.current.x, oy: offset.current.y };
   }
 
   useEffect(() => {
-    function onTouchMove(e: TouchEvent) {
-      if (!dragging.current) return;
+    function onMove(e: TouchEvent) {
+      if (!touch.current.active) return;
       const t = e.touches[0];
-      const dx = t.clientX - dragStart.current.x;
-      const dy = t.clientY - dragStart.current.y;
-      const c = clampOffset(dragStart.current.ox + dx, dragStart.current.oy + dy);
-      offsetX.current = c.x;
-      offsetY.current = c.y;
-      if (imgRef.current) {
-        imgRef.current.style.transform = `translate(${offsetX.current}px, ${offsetY.current}px)`;
-      }
+      offset.current = {
+        x: Math.min(0, Math.max(-maxOffsetX, touch.current.ox + t.clientX - touch.current.startX)),
+        y: Math.min(0, Math.max(-maxOffsetY, touch.current.oy + t.clientY - touch.current.startY)),
+      };
+      applyTransform();
     }
-    function onTouchEnd() { dragging.current = false; }
+    function onEnd() { touch.current.active = false; }
+    window.addEventListener('touchmove', onMove, { passive: true });
+    window.addEventListener('touchend', onEnd);
+    return () => { window.removeEventListener('touchmove', onMove); window.removeEventListener('touchend', onEnd); };
+  }, [maxOffsetX, maxOffsetY]);
 
-    window.addEventListener('touchmove', onTouchMove, { passive: true });
-    window.addEventListener('touchend', onTouchEnd);
-    return () => {
-      window.removeEventListener('touchmove', onTouchMove);
-      window.removeEventListener('touchend', onTouchEnd);
-    };
-  }, [clampOffset]);
-
-  // ── Done: canvas crop ────────────────────────────────────────
-  function handleDone() {
-    const img = imgRef.current;
-    if (!img || !naturalW || !naturalH) return;
-
-    const scaleToNatural = naturalW / displayW.current;
-
-    // What region of the natural image is visible in the frame?
-    const srcX = Math.round(-offsetX.current * scaleToNatural);
-    const srcY = Math.round(-offsetY.current * scaleToNatural);
-    const srcW = Math.round(FRAME_W * scaleToNatural);
-    const srcH = Math.round(frameH * scaleToNatural);
-
-    const canvas = document.createElement('canvas');
-    canvas.width = srcW;
-    canvas.height = srcH;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    ctx.drawImage(img, srcX, srcY, srcW, srcH, 0, 0, srcW, srcH);
-    canvas.toBlob((blob) => { if (blob) onCropComplete(blob); }, 'image/jpeg', 0.9);
+  function handleConfirm() {
+    onConfirm(offsetToFraction(offset.current.x, offset.current.y));
   }
 
-  const fH = aspect > 0 ? Math.round(FRAME_W / aspect) : FRAME_W;
-
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, background: 'rgba(0,0,0,0.9)' }}>
+    <div style={{ position: 'fixed', inset: 0, zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, background: 'rgba(0,0,0,0.92)' }}>
       <div style={{ background: '#0a0a0a', border: '1px solid #1e1e1e', borderRadius: 16, width: '100%', maxWidth: 640, overflow: 'hidden' }}>
         {/* Header */}
         <div style={{ padding: '14px 16px', borderBottom: '1px solid #141414', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -179,57 +142,56 @@ export default function ImageCropper({ src, aspect = 0, onCropComplete, onCancel
           </button>
         </div>
 
-        {/* Frame */}
-        <div style={{ padding: 16, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+        <div style={{ padding: 16, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14 }}>
+          {/* Frame */}
           <div
-            ref={frameRef}
             style={{
               width: FRAME_W,
               maxWidth: '100%',
-              height: fH,
+              height: frameH,
               overflow: 'hidden',
               position: 'relative',
               cursor: 'grab',
               borderRadius: 4,
               background: '#000',
-              border: '2px solid #fff',
+              border: '2px solid rgba(255,255,255,0.8)',
               userSelect: 'none',
             }}
             onMouseDown={onMouseDown}
             onTouchStart={onTouchStart}
           >
             <img
-              ref={imgRef}
+              ref={imgEl}
               src={src}
-              onLoad={onImageLoad}
-              alt="Crop"
+              alt=""
               draggable={false}
               style={{
-                width: displayW.current || '100%',
-                height: displayH.current || 'auto',
-                transform: `translate(${offsetX.current}px, ${offsetY.current}px)`,
+                width: displayW,
+                height: displayH,
+                transform: `translate(${initial.x}px, ${initial.y}px)`,
                 display: 'block',
                 userSelect: 'none',
                 pointerEvents: 'none',
+                flexShrink: 0,
               }}
             />
-            {/* Grid overlay */}
+            {/* Grid */}
             <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
-              <div style={{ position: 'absolute', left: 0, right: 0, top: '33.33%', height: 1, background: 'rgba(255,255,255,0.2)' }} />
-              <div style={{ position: 'absolute', left: 0, right: 0, top: '66.66%', height: 1, background: 'rgba(255,255,255,0.2)' }} />
-              <div style={{ position: 'absolute', top: 0, bottom: 0, left: '33.33%', width: 1, background: 'rgba(255,255,255,0.2)' }} />
-              <div style={{ position: 'absolute', top: 0, bottom: 0, left: '66.66%', width: 1, background: 'rgba(255,255,255,0.2)' }} />
+              <div style={{ position: 'absolute', left: 0, right: 0, top: '33.33%', height: 1, background: 'rgba(255,255,255,0.25)' }} />
+              <div style={{ position: 'absolute', left: 0, right: 0, top: '66.66%', height: 1, background: 'rgba(255,255,255,0.25)' }} />
+              <div style={{ position: 'absolute', top: 0, bottom: 0, left: '33.33%', width: 1, background: 'rgba(255,255,255,0.25)' }} />
+              <div style={{ position: 'absolute', top: 0, bottom: 0, left: '66.66%', width: 1, background: 'rgba(255,255,255,0.25)' }} />
             </div>
           </div>
 
-          <span style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12 }}>Drag to reposition</span>
+          <span style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12 }}>Drag to reposition</span>
 
           <div style={{ display: 'flex', gap: 10, width: '100%' }}>
             <button onClick={onCancel}
               style={{ flex: 1, padding: '10px', background: '#111', border: '1px solid #1e1e1e', borderRadius: 8, color: '#888', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
               Cancel
             </button>
-            <button onClick={handleDone}
+            <button onClick={handleConfirm}
               style={{ flex: 1, padding: '10px', background: '#fff', border: 'none', borderRadius: 8, color: '#000', fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
               <Check size={14} /> Done
             </button>
