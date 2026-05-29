@@ -22,6 +22,8 @@ import AdminLineups from '@/pages/admin/AdminLineups';
 import AdminReports from '@/pages/admin/AdminReports';
 import AdminFeaturedAds from '@/pages/admin/AdminFeaturedAds';
 import AdminTrending from '@/pages/admin/AdminTrending';
+import AdminMoments from '@/pages/admin/AdminMoments';
+import AdminPosts from '@/pages/admin/AdminPosts';
 import EODashboard from '@/pages/eo/EODashboard';
 import EOEvents from '@/pages/eo/EOEvents';
 import EOCreateEvent from '@/pages/eo/EOCreateEvent';
@@ -32,7 +34,13 @@ import EOPosts from '@/pages/eo/EOPosts';
 import EOBlast from '@/pages/eo/EOBlast';
 import EOAnalytics from '@/pages/eo/EOAnalytics';
 import EOCheckinDashboard from '@/pages/eo/EOCheckinDashboard';
+import EOPostDetail from '@/pages/eo/EOPostDetail';
+import EOMomentDetail from '@/pages/eo/EOMomentDetail';
 import AdminBackgrounds from '@/pages/admin/AdminBackgrounds';
+import AdminPassportCosmetics from '@/pages/admin/AdminPassportCosmetics';
+import AdminAds from '@/pages/admin/AdminAds';
+import EOAds from '@/pages/eo/EOAds';
+import UserProfile from '@/pages/UserProfile';
 
 // Root route
 const rootRoute = createRootRoute({
@@ -156,6 +164,18 @@ const adminTrendingRoute = createRoute({
   component: AdminTrending,
 });
 
+const adminMomentsRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/moments',
+  component: AdminMoments,
+});
+
+const adminPostsRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/posts',
+  component: AdminPosts,
+});
+
 // ── EO routes ──
 const eoLayoutRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -228,10 +248,52 @@ const eoCheckinDashboardRoute = createRoute({
   component: EOCheckinDashboard,
 });
 
+const eoPostDetailRoute = createRoute({
+  getParentRoute: () => eoLayoutRoute,
+  path: '/posts/$slug',
+  component: EOPostDetail,
+});
+
+const eoMomentDetailRoute = createRoute({
+  getParentRoute: () => eoLayoutRoute,
+  path: '/moments/$slug',
+  component: EOMomentDetail,
+});
+
 const adminBackgroundsRoute = createRoute({
   getParentRoute: () => adminLayoutRoute,
   path: '/backgrounds',
   component: AdminBackgrounds,
+});
+
+const adminAdsRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/ads',
+  component: AdminAds,
+});
+
+const adminPassportCosmeticsRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/passport-cosmetics',
+  component: AdminPassportCosmetics,
+});
+
+const eoAdsRoute = createRoute({
+  getParentRoute: () => eoLayoutRoute,
+  path: '/ads',
+  component: EOAds,
+});
+
+const adminUserProfileRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/user/$username',
+  component: UserProfile,
+});
+
+const eoUserProfileRoute = createRoute({
+  getParentRoute: () => eoLayoutRoute,
+  path: '/user/$username',
+  component: UserProfile,
 });
 
 // Build route tree
@@ -252,7 +314,12 @@ const routeTree = rootRoute.addChildren([
     adminReportsRoute,
     adminFeaturedAdsRoute,
     adminTrendingRoute,
+    adminMomentsRoute,
+    adminPostsRoute,
     adminBackgroundsRoute,
+    adminAdsRoute,
+    adminPassportCosmeticsRoute,
+    adminUserProfileRoute,
   ]),
   eoLayoutRoute.addChildren([
     eoDashboardRoute,
@@ -265,6 +332,10 @@ const routeTree = rootRoute.addChildren([
     eoBlastRoute,
     eoAnalyticsRoute,
     eoCheckinDashboardRoute,
+    eoPostDetailRoute,
+    eoMomentDetailRoute,
+    eoAdsRoute,
+    eoUserProfileRoute,
   ]),
 ]);
 

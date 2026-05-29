@@ -1622,7 +1622,7 @@ export default function EOAnalytics() {
           <div style={panelTitle}>Top moments (likes + comments)</div>
           {isLoading ? <Skeleton h={160} /> : (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 6 }}>
-              {(analytics?.top_moments ?? []).slice(0, 9).map((m: any) => {
+              {(analytics?.top_moments ?? []).map((m: any) => {
                 const img = m.images?.[0]?.image;
                 const url = img ? `${imgBase}${img}` : null;
                 return (
@@ -1658,7 +1658,7 @@ export default function EOAnalytics() {
                 </tr>
               </thead>
               <tbody>
-                {(analytics?.top_posts ?? []).slice(0, 8).map((p: any, i: number) => (
+                {(analytics?.top_posts ?? []).map((p: any, i: number) => (
                   <tr key={p.slug}>
                     <td style={{ ...td, color: '#444' }}>{i + 1}</td>
                     <td style={{ ...td, color: '#ccc', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>

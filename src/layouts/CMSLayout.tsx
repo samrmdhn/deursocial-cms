@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Outlet, Link, useRouterState } from '@tanstack/react-router';
+import logoImg from '@/assets/logo.png';
 import { useAuthStore } from '@/stores/authStore';
 import { useSidebarStore } from '@/stores/sidebarStore';
 import {
@@ -11,10 +12,9 @@ import {
   Megaphone,
   UserCog,
   LogOut,
-  Menu,
   ChevronLeft,
-  ChevronDown,
   ChevronRight,
+  ChevronDown,
   PartyPopper,
   FileText,
   Image,
@@ -31,66 +31,107 @@ interface NavItem {
   to?: string;
   icon: React.ReactNode;
   children?: { label: string; to: string }[];
+  badge?: number;
 }
 
 const adminNavItems: NavItem[] = [
-  { label: 'Dashboard', to: '/admin', icon: <LayoutDashboard size={20} /> },
-  { 
-    label: 'Analytics', 
-    icon: <TrendingUp size={20} />, 
-    children: [
-      { label: 'Trending', to: '/admin/trending' },
-      { label: 'Reports', to: '/admin/reports' },
-    ]
-  },
-  { 
-    label: 'Management', 
-    icon: <Users size={20} />, 
-    children: [
-      { label: 'Users', to: '/admin/users' },
-      { label: 'EO Accounts', to: '/admin/eo-accounts' },
-      { label: 'Venues', to: '/admin/venues' },
-    ]
-  },
-  { 
-    label: 'Events', 
-    icon: <Calendar size={20} />, 
+  { label: 'Dashboard', to: '/admin', icon: <LayoutDashboard size={15} /> },
+  {
+    label: 'Events',
+    icon: <Calendar size={15} />,
     children: [
       { label: 'All Events', to: '/admin/events' },
       { label: 'Lineups', to: '/admin/lineups' },
       { label: 'Featured Ads', to: '/admin/featured-ads' },
-    ]
+      { label: 'EO Ads', to: '/admin/ads' },
+    ],
+  },
+  {
+    label: 'Management',
+    icon: <Users size={15} />,
+    children: [
+      { label: 'Users', to: '/admin/users' },
+      { label: 'EO Accounts', to: '/admin/eo-accounts' },
+      { label: 'Venues', to: '/admin/venues' },
+    ],
+  },
+  {
+    label: 'Content',
+    icon: <Image size={15} />,
+    children: [
+      { label: 'Moments', to: '/admin/moments' },
+      { label: 'Posts', to: '/admin/posts' },
+    ],
+  },
+  {
+    label: 'Analytics',
+    icon: <TrendingUp size={15} />,
+    children: [
+      { label: 'Trending', to: '/admin/trending' },
+      { label: 'Reports', to: '/admin/reports' },
+    ],
+  },
+  {
+    label: 'Passport',
+    icon: <Star size={15} />,
+    children: [
+      { label: 'Cosmetics', to: '/admin/passport-cosmetics' },
+    ],
   },
 ];
 
 const eoNavItems: NavItem[] = [
-  { label: 'Dashboard', to: '/eo', icon: <LayoutDashboard size={20} /> },
-  { 
-    label: 'Events', 
-    icon: <Calendar size={20} />, 
+  { label: 'Dashboard', to: '/eo', icon: <LayoutDashboard size={15} /> },
+  {
+    label: 'My Events',
+    icon: <Calendar size={15} />,
     children: [
-      { label: 'My Events', to: '/eo/events' },
+      { label: 'Events', to: '/eo/events' },
       { label: 'Create Event', to: '/eo/events/create' },
       { label: 'Analytics', to: '/eo/analytics' },
-    ]
+    ],
   },
-  { 
-    label: 'Content', 
-    icon: <Image size={20} />, 
+  {
+    label: 'Content',
+    icon: <Image size={15} />,
     children: [
-      { label: 'Official Posts', to: '/eo/posts' },
+      { label: 'Posts', to: '/eo/posts' },
       { label: 'Moments', to: '/eo/moments' },
       { label: 'Blast Messages', to: '/eo/blast' },
-    ]
+    ],
   },
-  { 
-    label: 'Account', 
-    icon: <UserCircle size={20} />, 
+  {
+    label: 'Ads',
+    icon: <Megaphone size={15} />,
+    children: [
+      { label: 'My Ads', to: '/eo/ads' },
+    ],
+  },
+  {
+    label: 'Account',
+    icon: <UserCircle size={15} />,
     children: [
       { label: 'Profile', to: '/eo/profile' },
-    ]
+    ],
   },
 ];
+
+const S = {
+  sidebar: (collapsed: boolean): React.CSSProperties => ({
+    width: collapsed ? 56 : 230,
+    minWidth: collapsed ? 56 : 230,
+    height: '100vh',
+    background: '#000',
+    borderRight: '1px solid #111',
+    display: 'flex',
+    flexDirection: 'column',
+    transition: 'width .2s ease, min-width .2s ease',
+    overflow: 'hidden',
+    flexShrink: 0,
+    position: 'sticky',
+    top: 0,
+  }),
+};
 
 export default function CMSLayout() {
   const user = useAuthStore((s) => s.user);
@@ -98,7 +139,6 @@ export default function CMSLayout() {
   const { isCollapsed, toggleSidebar } = useSidebarStore();
   const routerState = useRouterState();
   const currentPath = routerState.location.pathname;
-
   const [expandedMenus, setExpandedMenus] = useState<Record<string, boolean>>({});
 
   const navItems = user?.role === 'admin' ? adminNavItems : eoNavItems;
@@ -110,134 +150,139 @@ export default function CMSLayout() {
 
   const isActive = (to?: string) => {
     if (!to) return false;
-    if (to === '/admin' || to === '/eo') {
-      return currentPath === to;
-    }
+    if (to === '/admin' || to === '/eo') return currentPath === to;
     return currentPath.startsWith(to);
   };
 
   const isGroupActive = (item: NavItem) => {
     if (item.to && isActive(item.to)) return true;
-    if (item.children) {
-      return item.children.some(child => isActive(child.to));
-    }
+    if (item.children) return item.children.some((c) => isActive(c.to));
     return false;
   };
 
   const toggleExpand = (label: string) => {
-    setExpandedMenus(prev => ({ ...prev, [label]: !prev[label] }));
+    setExpandedMenus((prev) => ({ ...prev, [label]: !prev[label] }));
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 flex font-sans">
+    <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', background: '#050505' }}>
       {/* Sidebar */}
-      <aside
-        className={`fixed top-0 left-0 h-full bg-slate-950 border-r border-slate-800/60 z-40 transition-all duration-300 flex flex-col ${
-          isCollapsed ? 'w-[72px]' : 'w-64'
-        }`}
-      >
+      <aside style={S.sidebar(isCollapsed)}>
         {/* Logo */}
-        <div className="h-16 flex items-center justify-between px-4 border-b border-slate-800/60">
+        <div style={{
+          height: 52, display: 'flex', alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: isCollapsed ? '0 14px' : '0 16px',
+          borderBottom: '1px solid #111', flexShrink: 0,
+        }}>
           {!isCollapsed && (
-            <h1 className="text-xl font-black tracking-tight text-white">
-              DEUR<span className="text-indigo-500">SOCIAL</span>
-            </h1>
+            <img src={logoImg} alt="Deursocial" style={{ height: 28, width: 'auto', objectFit: 'contain', flexShrink: 0 }} />
           )}
           <button
             onClick={toggleSidebar}
-            className="p-1.5 rounded-md text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
+            style={{
+              background: 'none', border: 'none', color: '#444', cursor: 'pointer',
+              padding: 4, display: 'flex', alignItems: 'center', justifyContent: 'center',
+              borderRadius: 4, marginLeft: isCollapsed ? 'auto' : 0, marginRight: isCollapsed ? 'auto' : 0,
+            }}
+            className="ds-icon-btn-sidebar"
           >
-            {isCollapsed ? <Menu size={20} /> : <ChevronLeft size={20} />}
+            {isCollapsed ? <ChevronRight size={15} /> : <ChevronLeft size={15} />}
           </button>
         </div>
 
-        {/* Role Badge */}
-        <div className="px-4 py-4">
-          <div className={`flex items-center gap-2 ${isCollapsed ? 'justify-center' : ''}`}>
-            <span
-              className={`inline-flex items-center px-2.5 py-1 rounded-md text-[11px] font-bold tracking-wider uppercase ${
-                user?.role === 'admin'
-                  ? 'bg-indigo-500/10 text-indigo-400'
-                  : 'bg-violet-500/10 text-violet-400'
-              }`}
-            >
-              {user?.role === 'admin' ? (
-                <>
-                  {!isCollapsed && <Megaphone size={12} className="mr-1.5" />}
-                  {isCollapsed ? 'A' : 'ADMIN'}
-                </>
-              ) : (
-                <>
-                  {!isCollapsed && <PartyPopper size={12} className="mr-1.5" />}
-                  {isCollapsed ? 'EO' : 'ORGANIZER'}
-                </>
-              )}
-            </span>
-          </div>
+        {/* Role chip */}
+        <div style={{
+          padding: isCollapsed ? '10px 0' : '8px 12px 4px',
+          display: 'flex', justifyContent: isCollapsed ? 'center' : 'flex-start',
+        }}>
+          <span style={{
+            display: 'inline-flex', alignItems: 'center', padding: '2px 7px',
+            background: '#0a0a0a', border: '1px solid #1e1e1e', borderRadius: 3,
+            fontSize: 9, fontWeight: 600, letterSpacing: '2px', textTransform: 'uppercase',
+            color: '#444', whiteSpace: 'nowrap',
+          }}>
+            {isCollapsed ? (user?.role === 'admin' ? 'A' : 'EO') : (user?.role === 'admin' ? 'Admin' : 'Organizer')}
+          </span>
         </div>
 
-        {/* Navigation */}
-        <nav className="flex-1 overflow-y-auto px-3 pb-4 space-y-1 custom-scrollbar">
+        {/* Nav */}
+        <nav style={{ flex: 1, overflowY: 'auto', padding: '6px 8px', display: 'flex', flexDirection: 'column', gap: 1 }}>
           {navItems.map((item) => {
             const hasChildren = !!item.children;
-            const active = isGroupActive(item);
-            const isExpanded = expandedMenus[item.label] ?? active;
+            const groupActive = isGroupActive(item);
+            const isExpanded = expandedMenus[item.label] ?? groupActive;
+
+            if (!hasChildren) {
+              const active = isActive(item.to);
+              return (
+                <Link
+                  key={item.label}
+                  to={item.to!}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 9,
+                    padding: isCollapsed ? '9px 0' : '8px 10px',
+                    justifyContent: isCollapsed ? 'center' : 'flex-start',
+                    background: active ? '#111' : 'transparent',
+                    borderLeft: active ? '2px solid #ccc' : '2px solid transparent',
+                    borderRadius: active ? '0 4px 4px 0' : 4,
+                    color: active ? '#e8e8e8' : '#555',
+                    fontSize: 12, fontWeight: active ? 500 : 400,
+                    textDecoration: 'none', transition: 'all .12s',
+                    border: 'none',
+                  }}
+                  title={isCollapsed ? item.label : undefined}
+                >
+                  <span style={{ flexShrink: 0, display: 'flex' }}>{item.icon}</span>
+                  {!isCollapsed && <span style={{ flex: 1, whiteSpace: 'nowrap' }}>{item.label}</span>}
+                </Link>
+              );
+            }
 
             return (
-              <div key={item.label} className="mb-1">
-                {hasChildren ? (
-                  <button
-                    onClick={() => {
-                      if (!isCollapsed) {
-                        toggleExpand(item.label);
-                      }
-                    }}
-                    className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-colors cursor-pointer ${
-                      active 
-                        ? 'text-white' 
-                        : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
-                    } ${isCollapsed ? 'justify-center' : ''}`}
-                    title={isCollapsed ? item.label : undefined}
-                  >
-                    <div className="flex items-center gap-3">
-                      <span className={active ? 'text-indigo-400' : ''}>{item.icon}</span>
-                      {!isCollapsed && <span>{item.label}</span>}
-                    </div>
-                    {!isCollapsed && (
-                      <span className="text-slate-500">
-                        {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+              <div key={item.label}>
+                <button
+                  onClick={() => { if (!isCollapsed) toggleExpand(item.label); }}
+                  style={{
+                    width: '100%', display: 'flex', alignItems: 'center', gap: 9,
+                    padding: isCollapsed ? '9px 0' : '8px 10px',
+                    justifyContent: isCollapsed ? 'center' : 'flex-start',
+                    background: groupActive ? '#0d0d0d' : 'transparent',
+                    borderLeft: groupActive ? '2px solid #333' : '2px solid transparent',
+                    borderRadius: groupActive ? '0 4px 4px 0' : 4,
+                    color: groupActive ? '#aaa' : '#555',
+                    cursor: 'pointer', fontSize: 12, fontWeight: groupActive ? 500 : 400,
+                    border: 'none', textAlign: 'left', transition: 'all .12s',
+                  }}
+                  title={isCollapsed ? item.label : undefined}
+                >
+                  <span style={{ flexShrink: 0, display: 'flex' }}>{item.icon}</span>
+                  {!isCollapsed && (
+                    <>
+                      <span style={{ flex: 1, whiteSpace: 'nowrap' }}>{item.label}</span>
+                      <span style={{ color: '#333', display: 'flex' }}>
+                        {isExpanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
                       </span>
-                    )}
-                  </button>
-                ) : (
-                  <Link
-                    to={item.to!}
-                    className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                      active
-                        ? 'bg-indigo-500 text-white shadow-lg shadow-indigo-500/20'
-                        : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
-                    } ${isCollapsed ? 'justify-center' : ''}`}
-                    title={isCollapsed ? item.label : undefined}
-                  >
-                    <span className={active ? 'text-white' : ''}>{item.icon}</span>
-                    {!isCollapsed && <span>{item.label}</span>}
-                  </Link>
-                )}
+                    </>
+                  )}
+                </button>
 
-                {/* Submenu */}
                 {hasChildren && isExpanded && !isCollapsed && (
-                  <div className="mt-1 mb-2 ml-4 pl-4 border-l border-slate-800 space-y-1">
-                    {item.children!.map(child => {
+                  <div style={{ marginTop: 1, marginBottom: 2, marginLeft: 12, paddingLeft: 16, borderLeft: '1px solid #161616', display: 'flex', flexDirection: 'column', gap: 1 }}>
+                    {item.children!.map((child) => {
                       const childActive = isActive(child.to);
                       return (
                         <Link
                           key={child.to}
                           to={child.to}
-                          className={`block px-3 py-2 rounded-md text-sm transition-colors ${
-                            childActive
-                              ? 'bg-slate-800 text-white font-medium'
-                              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
-                          }`}
+                          style={{
+                            display: 'block', padding: '6px 10px', borderRadius: 4,
+                            fontSize: 11, fontWeight: childActive ? 500 : 400,
+                            color: childActive ? '#d8d8d8' : '#484848',
+                            background: childActive ? '#111' : 'transparent',
+                            textDecoration: 'none', transition: 'all .1s',
+                            borderLeft: childActive ? '2px solid #888' : '2px solid transparent',
+                          }}
                         >
                           {child.label}
                         </Link>
@@ -250,42 +295,46 @@ export default function CMSLayout() {
           })}
         </nav>
 
-        {/* User Info & Logout */}
-        <div className="border-t border-slate-800/60 p-4">
+        {/* User / Logout */}
+        <div style={{ padding: '10px 8px', borderTop: '1px solid #111', flexShrink: 0 }}>
           {!isCollapsed && (
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 rounded-full bg-slate-800 flex items-center justify-center text-white text-sm font-bold border border-slate-700">
+            <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '6px 10px', marginBottom: 3 }}>
+              <div style={{
+                width: 26, height: 26, borderRadius: '50%', background: '#111',
+                border: '1px solid #1e1e1e', display: 'flex', alignItems: 'center',
+                justifyContent: 'center', fontSize: 10, fontWeight: 700, color: '#555', flexShrink: 0,
+              }}>
                 {user?.display_name?.charAt(0)?.toUpperCase() || 'U'}
               </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-slate-200 truncate">
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 11, fontWeight: 500, color: '#aaa', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                   {user?.display_name}
-                </p>
-                <p className="text-xs text-slate-500 truncate">@{user?.username}</p>
+                </div>
+                <div style={{ fontSize: 10, color: '#444', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  @{user?.username}
+                </div>
               </div>
             </div>
           )}
           <button
             onClick={handleLogout}
-            className={`flex items-center gap-2 w-full px-3 py-2.5 rounded-lg text-sm text-slate-400 hover:bg-slate-800 hover:text-white transition-colors cursor-pointer ${
-              isCollapsed ? 'justify-center' : ''
-            }`}
+            style={{
+              width: '100%', display: 'flex', alignItems: 'center', gap: 8,
+              justifyContent: isCollapsed ? 'center' : 'flex-start',
+              padding: isCollapsed ? '9px 0' : '7px 10px',
+              background: 'none', border: 'none', color: '#3a3a3a', cursor: 'pointer',
+              fontSize: 11, borderRadius: 4, transition: 'all .1s',
+            }}
           >
-            <LogOut size={18} />
-            {!isCollapsed && <span className="font-medium">Sign Out</span>}
+            <LogOut size={14} />
+            {!isCollapsed && 'Sign out'}
           </button>
         </div>
       </aside>
 
-      {/* Main Content */}
-      <main
-        className={`flex-1 transition-all duration-300 ${
-          isCollapsed ? 'ml-[72px]' : 'ml-64'
-        }`}
-      >
-        <div className="min-h-screen bg-slate-950 text-slate-300">
-          <Outlet />
-        </div>
+      {/* Main content */}
+      <main style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', background: '#050505', minHeight: '100vh' }}>
+        <Outlet />
       </main>
     </div>
   );

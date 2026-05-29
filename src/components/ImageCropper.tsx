@@ -64,7 +64,7 @@ export default function ImageCropper({
 
   const initial = fractionToOffset(initialOrigin?.x ?? 0.5, initialOrigin?.y ?? 0.5);
   const offset = useRef({ x: initial.x, y: initial.y });
-  const imgEl = useRef<HTMLImageElement>(null);
+  const imgEl = useRef<HTMLDivElement>(null);
 
   function applyTransform() {
     if (imgEl.current) {
@@ -160,19 +160,16 @@ export default function ImageCropper({
             onMouseDown={onMouseDown}
             onTouchStart={onTouchStart}
           >
-            <img
+            <div
               ref={imgEl}
-              src={src}
-              alt=""
-              draggable={false}
               style={{
                 width: displayW,
                 height: displayH,
                 transform: `translate(${initial.x}px, ${initial.y}px)`,
-                display: 'block',
-                userSelect: 'none',
-                pointerEvents: 'none',
                 flexShrink: 0,
+                backgroundImage: `url(${src})`,
+                backgroundSize: '100% 100%',
+                backgroundRepeat: 'no-repeat',
               }}
             />
             {/* Grid */}

@@ -2,39 +2,28 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import toast from 'react-hot-toast';
-import { Plus, Trash2, Pencil, X, UserCog } from 'lucide-react';
+import { Plus, Trash2, X, UserCog } from 'lucide-react';
 import bcryptjs from 'bcryptjs';
+import { useTableSort } from '@/hooks/useTableSort';
+
+const th: React.CSSProperties = { padding: '9px 18px', textAlign: 'left', fontSize: 10, fontWeight: 500, color: '#444', letterSpacing: '0.8px', textTransform: 'uppercase', whiteSpace: 'nowrap' };
+const inp: React.CSSProperties = { width: '100%', padding: '9px 12px', background: '#080808', border: '1px solid #1e1e1e', borderRadius: 5, color: '#e0e0e0', fontSize: 12, outline: 'none' };
+const lbl: React.CSSProperties = { display: 'block', fontSize: 11, fontWeight: 500, color: '#666', marginBottom: 6 };
 
 export default function AdminEOAccounts() {
   const [showModal, setShowModal] = useState(false);
-  const [editId, setEditId] = useState<number | null>(null);
   const [form, setForm] = useState({ name: '', detail: '', image: '', email: '', password: '', username: '' });
   const queryClient = useQueryClient();
 
   const { data: eos, isLoading } = useQuery({
     queryKey: ['admin', 'eo-accounts'],
     queryFn: async () => {
-      // Get EO entries from users_admin table with roles_id = 2
-      const { data: adminEntries } = await supabase
-        .from('ir_users_admin')
-        .select('id, users_id, event_organizers_id, created_at')
-        .eq('roles_id', 2);
-
+      const { data: adminEntries } = await supabase.from('ir_users_admin').select('id, users_id, event_organizers_id, created_at').eq('roles_id', 2);
       if (!adminEntries || adminEntries.length === 0) return [];
-
       const userIds = adminEntries.map((e) => e.users_id).filter(Boolean);
       const eoIds = adminEntries.map((e) => e.event_organizers_id).filter(Boolean);
-
-      const { data: users } = await supabase
-        .from('ir_users')
-        .select('id, display_name, username, email, photo')
-        .in('id', userIds);
-
-      const { data: eoData } = await supabase
-        .from('ir_event_organizers')
-        .select('*')
-        .in('id', eoIds);
-
+      const { data: users } = await supabase.from('ir_users').select('id, display_name, username, email, photo').in('id', userIds);
+      const { data: eoData } = await supabase.from('ir_event_organizers').select('*').in('id', eoIds);
       return adminEntries.map((entry) => ({
         ...entry,
         user: users?.find((u) => u.id === entry.users_id),
@@ -45,226 +34,122 @@ export default function AdminEOAccounts() {
 
   const createMutation = useMutation({
     mutationFn: async (formData: typeof form) => {
-      // 1. Create user account
       const hashedPassword = await bcryptjs.hash(formData.password, 10);
       const username = formData.username.trim().toLowerCase().replace(/\s+/g, '_');
-
-      const { data: newUser, error: userError } = await supabase
-        .from('ir_users')
-        .insert({
-          display_name: formData.name,
-          email: formData.email,
-          username,
-          username_anonymous: username + '_anon',
-          display_name_anonymous: 'Anonymous ' + formData.name,
-          password: hashedPassword,
-          status: 1,
-          created_at: Math.floor(Date.now() / 1000),
-        })
-        .select('id')
-        .single();
+      const { data: newUser, error: userError } = await supabase.from('ir_users').insert({
+        display_name: formData.name, email: formData.email, username,
+        username_anonymous: username + '_anon', display_name_anonymous: 'Anonymous ' + formData.name,
+        password: hashedPassword, status: 1, created_at: Math.floor(Date.now() / 1000),
+      }).select('id').single();
       if (userError) throw userError;
-
-      // 2. Create EO entry
-      const { data: newEO, error: eoError } = await supabase
-        .from('ir_event_organizers')
-        .insert({
-          name: formData.name,
-          detail: formData.detail,
-          image: formData.image || null,
-          created_at: Math.floor(Date.now() / 1000),
-        })
-        .select('id')
-        .single();
+      const { data: newEO, error: eoError } = await supabase.from('ir_event_organizers').insert({
+        name: formData.name, detail: formData.detail, image: formData.image || null,
+        created_at: Math.floor(Date.now() / 1000),
+      }).select('id').single();
       if (eoError) throw eoError;
-
-      // 3. Link in users_admin with roles_id = 2 (EO)
-      const { error: linkError } = await supabase
-        .from('ir_users_admin')
-        .insert({
-          roles_id: 2,
-          users_id: newUser.id,
-          event_organizers_id: newEO.id,
-          created_at: Math.floor(Date.now() / 1000),
-        });
+      const { error: linkError } = await supabase.from('ir_users_admin').insert({
+        roles_id: 2, users_id: newUser.id, event_organizers_id: newEO.id,
+        created_at: Math.floor(Date.now() / 1000),
+      });
       if (linkError) throw linkError;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'eo-accounts'] });
       toast.success('EO account created');
       setShowModal(false);
-      resetForm();
+      setForm({ name: '', detail: '', image: '', email: '', password: '', username: '' });
     },
-    onError: (err) => {
-      console.error(err);
-      toast.error('Failed to create EO account');
-    },
+    onError: (err) => { console.error(err); toast.error('Failed to create EO account'); },
   });
 
   const deleteMutation = useMutation({
-    mutationFn: async (id: number) => {
-      const { error } = await supabase
-        .from('ir_users_admin')
-        .delete()
-        .eq('id', id);
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['admin', 'eo-accounts'] });
-      toast.success('EO access removed');
-    },
-    onError: () => toast.error('Failed to remove EO access'),
+    mutationFn: async (id: number) => { const { error } = await supabase.from('ir_users_admin').delete().eq('id', id); if (error) throw error; },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['admin', 'eo-accounts'] }); toast.success('EO access removed'); },
+    onError: () => toast.error('Failed'),
   });
 
-  const resetForm = () => {
-    setForm({ name: '', detail: '', image: '', email: '', password: '', username: '' });
-    setEditId(null);
-  };
+  const { sorted: sortedEOs, toggleSort, SortIcon } = useTableSort(eos, 'created_at' as any, 'desc');
 
   return (
-    <div className="p-6 lg:p-8 space-y-6">
-      <div className="flex items-center justify-between">
+    <div style={{ padding: '24px 28px 48px' }}>
+      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: 20 }}>
         <div>
-          <h1 className="text-2xl font-bold text-white">EO Accounts</h1>
-          <p className="text-slate-400 mt-1">Manage Event Organizer access</p>
+          <h1 style={{ fontSize: 17, fontWeight: 600, color: '#ececec', letterSpacing: '-0.3px', lineHeight: 1 }}>EO Accounts</h1>
+          <p style={{ fontSize: 11, color: '#555', marginTop: 4 }}>Manage Event Organizer access</p>
         </div>
-        <button
-          onClick={() => { resetForm(); setShowModal(true); }}
-          className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-xl transition-all cursor-pointer"
-        >
-          <Plus size={16} />
-          Create EO
+        <button onClick={() => { setForm({ name: '', detail: '', image: '', email: '', password: '', username: '' }); setShowModal(true); }}
+          style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px', background: '#fff', border: 'none', borderRadius: 5, color: '#000', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>
+          <Plus size={12} /> Create EO
         </button>
       </div>
 
-      <div className="bg-slate-900/50 border border-slate-800/50 rounded-2xl overflow-hidden">
-        <table className="w-full">
-          <thead>
-            <tr className="border-b border-slate-800/50">
-              {['EO Name', 'Username', 'Email', 'Created', 'Actions'].map((h) => (
-                <th key={h} className="text-left py-3 px-6 text-xs font-medium text-slate-400 uppercase tracking-wider">{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {isLoading ? (
-              <tr><td colSpan={5} className="py-12 text-center text-slate-500">
-                <div className="w-6 h-6 border-2 border-indigo-500/30 border-t-indigo-500 rounded-full animate-spin mx-auto" />
-              </td></tr>
-            ) : eos?.length === 0 ? (
-              <tr><td colSpan={5} className="py-12 text-center text-slate-500">No EO accounts yet</td></tr>
-            ) : (
-              eos?.map((entry) => (
-                <tr key={entry.id} className="border-b border-slate-800/30 hover:bg-slate-800/20 transition-colors">
-                  <td className="py-3 px-6">
-                    <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-full bg-violet-500/15 flex items-center justify-center">
-                        <UserCog size={16} className="text-violet-400" />
+      <div style={{ background: '#0a0a0a', border: '1px solid #1a1a1a', borderRadius: 6, overflow: 'hidden' }}>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 540 }}>
+            <thead>
+              <tr style={{ borderBottom: '1px solid #111' }}>
+                <th style={th}><button onClick={() => toggleSort('eo' as any)} style={{ background: 'none', border: 'none', color: '#444', cursor: 'pointer', fontSize: 10, fontWeight: 500, letterSpacing: '0.8px', textTransform: 'uppercase', padding: 0, display: 'flex', alignItems: 'center' }}>EO Name <SortIcon col={'eo' as any} /></button></th>
+                <th style={th}>Username</th>
+                <th style={th}>Email</th>
+                <th style={th}><button onClick={() => toggleSort('created_at' as any)} style={{ background: 'none', border: 'none', color: '#444', cursor: 'pointer', fontSize: 10, fontWeight: 500, letterSpacing: '0.8px', textTransform: 'uppercase', padding: 0, display: 'flex', alignItems: 'center' }}>Created <SortIcon col={'created_at' as any} /></button></th>
+                <th style={th}></th>
+              </tr>
+            </thead>
+            <tbody>
+              {isLoading ? (
+                <tr><td colSpan={5} style={{ padding: '48px 18px', textAlign: 'center' }}>
+                  <div style={{ width: 18, height: 18, border: '2px solid #1a1a1a', borderTopColor: '#444', borderRadius: '50%', margin: '0 auto' }} className="ds-spin" />
+                </td></tr>
+              ) : (sortedEOs?.length ?? 0) === 0 ? (
+                <tr><td colSpan={5} style={{ padding: '40px 18px', textAlign: 'center', fontSize: 12, color: '#333' }}>No EO accounts yet</td></tr>
+              ) : sortedEOs?.map((entry, i) => (
+                <tr key={entry.id} style={{ borderBottom: i < (sortedEOs.length - 1) ? '1px solid #0f0f0f' : 'none' }}>
+                  <td style={{ padding: '10px 18px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <div style={{ width: 28, height: 28, borderRadius: '50%', background: '#111', border: '1px solid #1e1e1e', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#333', flexShrink: 0 }}>
+                        <UserCog size={13} />
                       </div>
                       <div>
-                        <p className="text-sm font-medium text-slate-200">{entry.eo?.name || '-'}</p>
-                        <p className="text-xs text-slate-500 max-w-[200px] truncate">{entry.eo?.detail || ''}</p>
+                        <div style={{ fontSize: 12, fontWeight: 500, color: '#d0d0d0' }}>{entry.eo?.name || '—'}</div>
+                        {entry.eo?.detail && <div style={{ fontSize: 10, color: '#484848', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{entry.eo.detail}</div>}
                       </div>
                     </div>
                   </td>
-                  <td className="py-3 px-6 text-sm text-slate-300 font-mono">@{entry.user?.username || '-'}</td>
-                  <td className="py-3 px-6 text-sm text-slate-400">{entry.user?.email || '-'}</td>
-                  <td className="py-3 px-6 text-sm text-slate-400">
-                    {entry.created_at
-                      ? new Date(entry.created_at * 1000).toLocaleDateString('id-ID')
-                      : '-'}
+                  <td style={{ padding: '10px 18px', fontSize: 11, color: '#555' }}>@{entry.user?.username || '—'}</td>
+                  <td style={{ padding: '10px 18px', fontSize: 11, color: '#555' }}>{entry.user?.email || '—'}</td>
+                  <td style={{ padding: '10px 18px', fontSize: 11, color: '#484848' }}>
+                    {entry.created_at ? new Date(entry.created_at * 1000).toLocaleDateString('id-ID') : '—'}
                   </td>
-                  <td className="py-3 px-6">
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => {
-                          if (confirm('Remove EO access?')) deleteMutation.mutate(entry.id);
-                        }}
-                        className="p-2 rounded-lg text-red-400 hover:bg-red-500/10 transition-all cursor-pointer"
-                      >
-                        <Trash2 size={15} />
-                      </button>
-                    </div>
+                  <td style={{ padding: '10px 18px' }}>
+                    <button onClick={() => { if (confirm('Remove EO access?')) deleteMutation.mutate(entry.id); }}
+                      style={{ background: 'none', border: 'none', color: '#4a1a1a', cursor: 'pointer', padding: 4, display: 'flex', borderRadius: 3 }}>
+                      <Trash2 size={13} />
+                    </button>
                   </td>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
 
-      {/* Create Modal */}
       {showModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-slate-900 border border-slate-700/50 rounded-2xl w-full max-w-md shadow-2xl">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800/50">
-              <h2 className="text-lg font-semibold text-white">Create EO Account</h2>
-              <button onClick={() => setShowModal(false)} className="text-slate-400 hover:text-white cursor-pointer">
-                <X size={20} />
-              </button>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 20 }}>
+          <div style={{ background: '#0c0c0c', border: '1px solid #1e1e1e', borderRadius: 6, width: '100%', maxWidth: 400, boxShadow: '0 20px 60px rgba(0,0,0,0.9)' }} className="ds-fade">
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 20px', borderBottom: '1px solid #141414' }}>
+              <span style={{ fontSize: 13, fontWeight: 600, color: '#d0d0d0' }}>Create EO Account</span>
+              <button onClick={() => setShowModal(false)} style={{ background: 'none', border: 'none', color: '#444', cursor: 'pointer', padding: 4, display: 'flex', borderRadius: 4 }}><X size={14} /></button>
             </div>
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                createMutation.mutate(form);
-              }}
-              className="p-6 space-y-4"
-            >
-              <div>
-                <label className="block text-sm text-slate-300 mb-1.5">EO Name</label>
-                <input
-                  value={form.name}
-                  onChange={(e) => setForm({ ...form, name: e.target.value })}
-                  className="w-full px-4 py-2.5 bg-slate-800/50 border border-slate-700/50 rounded-xl text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-sm text-slate-300 mb-1.5">Username <span className="text-slate-500 text-xs">(used on posts)</span></label>
-                <input
-                  value={form.username}
-                  onChange={(e) => setForm({ ...form, username: e.target.value.replace(/\s+/g, '_').toLowerCase() })}
-                  placeholder="e.g. soundrush_official"
-                  className="w-full px-4 py-2.5 bg-slate-800/50 border border-slate-700/50 rounded-xl text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-sm text-slate-300 mb-1.5">Description</label>
-                <textarea
-                  value={form.detail}
-                  onChange={(e) => setForm({ ...form, detail: e.target.value })}
-                  className="w-full px-4 py-2.5 bg-slate-800/50 border border-slate-700/50 rounded-xl text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/50 h-20 resize-none"
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-sm text-slate-300 mb-1.5">Email</label>
-                <input
-                  type="email"
-                  value={form.email}
-                  onChange={(e) => setForm({ ...form, email: e.target.value })}
-                  className="w-full px-4 py-2.5 bg-slate-800/50 border border-slate-700/50 rounded-xl text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-sm text-slate-300 mb-1.5">Password</label>
-                <input
-                  type="text"
-                  value={form.password}
-                  onChange={(e) => setForm({ ...form, password: e.target.value })}
-                  className="w-full px-4 py-2.5 bg-slate-800/50 border border-slate-700/50 rounded-xl text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
-                  required
-                  minLength={6}
-                />
-              </div>
-              <button
-                type="submit"
-                disabled={createMutation.isPending}
-                className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-medium rounded-xl transition-all disabled:opacity-50 cursor-pointer"
-              >
-                {createMutation.isPending ? 'Creating...' : 'Create EO Account'}
+            <form onSubmit={(e) => { e.preventDefault(); createMutation.mutate(form); }} style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div><label style={lbl}>EO Name</label><input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} style={inp} required /></div>
+              <div><label style={lbl}>Username <span style={{ color: '#333', fontSize: 10 }}>(used on posts)</span></label>
+                <input value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value.replace(/\s+/g, '_').toLowerCase() })} placeholder="e.g. soundrush_official" style={inp} required /></div>
+              <div><label style={lbl}>Description</label><textarea value={form.detail} onChange={(e) => setForm({ ...form, detail: e.target.value })} rows={3} style={{ ...inp, resize: 'none' }} required /></div>
+              <div><label style={lbl}>Email</label><input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} style={inp} required /></div>
+              <div><label style={lbl}>Password</label><input type="text" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} style={inp} required minLength={6} /></div>
+              <button type="submit" disabled={createMutation.isPending}
+                style={{ padding: '10px', background: '#fff', border: 'none', borderRadius: 5, color: '#000', fontSize: 12, fontWeight: 600, cursor: 'pointer', marginTop: 2 }}>
+                {createMutation.isPending ? 'Creating…' : 'Create EO Account'}
               </button>
             </form>
           </div>

@@ -144,31 +144,85 @@ export default function EOPosts() {
     const files = Array.from(e.target.files || []);
     if (photos.length + files.length > 3) { toast.error('Maximum 3 images'); return; }
     files.forEach((file) => {
-      const img = new Image();
       const url = URL.createObjectURL(file);
-      img.onload = () => {
-        setPhotos((prev) => [...prev, { file, preview: url, naturalW: img.naturalWidth, naturalH: img.naturalHeight, cropOrigin: null }]);
+      const imgEl = new Image();
+      imgEl.onload = () => {
+        setPhotos((prev) => [...prev, {
+          file,
+          preview: url,
+          naturalW: imgEl.naturalWidth,
+          naturalH: imgEl.naturalHeight,
+          cropOrigin: null,
+        }]);
       };
-      img.src = url;
+      imgEl.src = url;
     });
     e.target.value = '';
   };
+
+  // Same math as RN prepareImage — crops canvas pixels using origin fraction + aspect
+  async function prepareImage(photo: PhotoItem, aspect: [number, number] | null): Promise<File> {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => {
+        const imgW = img.naturalWidth;
+        const imgH = img.naturalHeight;
+
+        let srcX = 0, srcY = 0, srcW = imgW, srcH = imgH;
+
+        if (aspect) {
+          const [aw, ah] = aspect;
+          const targetRatio = aw / ah;
+          const imageRatio = imgW / imgH;
+
+          let cropW: number, cropH: number;
+          if (imageRatio > targetRatio) {
+            cropH = imgH;
+            cropW = Math.round(imgH * targetRatio);
+          } else {
+            cropW = imgW;
+            cropH = Math.round(imgW / targetRatio);
+          }
+
+          const fx = photo.cropOrigin?.x ?? 0.5;
+          const fy = photo.cropOrigin?.y ?? 0.5;
+          srcX = Math.round(Math.max(0, Math.min(fx * (imgW - cropW), imgW - cropW)));
+          srcY = Math.round(Math.max(0, Math.min(fy * (imgH - cropH), imgH - cropH)));
+          srcW = cropW;
+          srcH = cropH;
+        }
+
+        // Resize to max 1200px wide
+        const outW = Math.min(srcW, 1200);
+        const outH = Math.round(srcH * (outW / srcW));
+
+        const canvas = document.createElement('canvas');
+        canvas.width = outW;
+        canvas.height = outH;
+        const ctx = canvas.getContext('2d')!;
+        ctx.drawImage(img, srcX, srcY, srcW, srcH, 0, 0, outW, outH);
+        canvas.toBlob((blob) => {
+          if (!blob) { reject(new Error('Canvas toBlob failed')); return; }
+          resolve(new File([blob], 'post.jpg', { type: 'image/jpeg' }));
+        }, 'image/jpeg', 0.8);
+      };
+      img.onerror = reject;
+      img.src = photo.preview;
+    });
+  }
 
   const createMutation = useMutation({
     mutationFn: async () => {
       if (!createEvent) throw new Error('Select an event');
       const eventSlug = events?.find((e: any) => String(e.id) === createEvent)?.slug;
       if (!eventSlug) throw new Error('Event not found');
+      const croppedFiles = await Promise.all(photos.map((p) => prepareImage(p, selectedRatio.aspect)));
       const imageUrls = await Promise.all(
-        photos.map((p) => uploadImageToBucket(p.file, 'post-images', 'official'))
+        croppedFiles.map((f) => uploadImageToBucket(f, 'post-images', 'official'))
       );
       const fd = new FormData();
       fd.append('caption_post', caption);
       (imageUrls.filter(Boolean) as string[]).forEach((url) => fd.append('image_urls[]', url));
-      if (selectedRatio.aspect) {
-        fd.append('crop_aspect', JSON.stringify(selectedRatio.aspect));
-        photos.forEach((p) => fd.append('crop_origins[]', JSON.stringify(p.cropOrigin ?? { x: 0.5, y: 0.5 })));
-      }
       await api.post(`/api/event/official-posts/${eventSlug}`, fd);
     },
     onSuccess: () => {
@@ -242,33 +296,49 @@ export default function EOPosts() {
             const displayAspect = selectedRatio.aspect ?? [1, 1];
             const PREVIEW_H = Math.round(PREVIEW_W * (displayAspect[1] / displayAspect[0]));
 
-            function getPreviewImageStyle(photo: PhotoItem): React.CSSProperties {
-              if (!selectedRatio.aspect) {
-                return { width: PREVIEW_W, height: PREVIEW_H, objectFit: 'cover' };
+            function getPreviewBgStyle(photo: PhotoItem): React.CSSProperties {
+              if (!selectedRatio.aspect || !photo.naturalW || !photo.naturalH) {
+                return {
+                  position: 'absolute', inset: 0,
+                  backgroundImage: `url(${photo.preview})`,
+                  backgroundSize: 'cover',
+                  backgroundPosition: 'center',
+                };
               }
+
               const [aw, ah] = selectedRatio.aspect;
               const targetRatio = aw / ah;
               const imageRatio = photo.naturalW / photo.naturalH;
-              let imgScale: number;
+
+              let scale: number;
               if (imageRatio > targetRatio) {
-                imgScale = PREVIEW_H / photo.naturalH;
+                scale = PREVIEW_H / photo.naturalH;
               } else {
-                imgScale = PREVIEW_W / photo.naturalW;
+                scale = PREVIEW_W / photo.naturalW;
               }
-              const renderedW = photo.naturalW * imgScale;
-              const renderedH = photo.naturalH * imgScale;
+
+              const renderedW = photo.naturalW * scale;
+              const renderedH = photo.naturalH * scale;
+
               const fx = photo.cropOrigin?.x ?? 0.5;
               const fy = photo.cropOrigin?.y ?? 0.5;
-              const tx = -fx * Math.max(0, renderedW - PREVIEW_W);
-              const ty = -fy * Math.max(0, renderedH - PREVIEW_H);
-              return { width: renderedW, height: renderedH, transform: `translate(${tx}px, ${ty}px)`, flexShrink: 0 };
+              const tx = -(fx * Math.max(0, renderedW - PREVIEW_W));
+              const ty = -(fy * Math.max(0, renderedH - PREVIEW_H));
+
+              return {
+                position: 'absolute', inset: 0,
+                backgroundImage: `url(${photo.preview})`,
+                backgroundSize: `${renderedW}px ${renderedH}px`,
+                backgroundRepeat: 'no-repeat',
+                backgroundPosition: `${tx}px ${ty}px`,
+              };
             }
 
             return (
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                 {photos.map((photo, index) => (
                   <div key={index} style={{ position: 'relative', width: PREVIEW_W, height: PREVIEW_H, borderRadius: 8, overflow: 'hidden', border: '1px solid #1e1e1e', flexShrink: 0 }}>
-                    <img src={photo.preview} alt="" style={{ ...getPreviewImageStyle(photo), display: 'block' }} />
+                    <div style={getPreviewBgStyle(photo)} />
                     {selectedRatio.aspect && (
                       <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'rgba(0,0,0,0.35)', paddingBlock: 3, textAlign: 'center', fontSize: 10, color: '#fff', pointerEvents: 'none' }}>
                         Tap to adjust

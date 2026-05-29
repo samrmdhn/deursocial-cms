@@ -32,3 +32,4 @@ dist-ssr
 test-*.cjs
 test-*.js
 fix_seq.js
+.vercel

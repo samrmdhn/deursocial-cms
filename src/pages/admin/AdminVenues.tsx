@@ -3,6 +3,9 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import toast from 'react-hot-toast';
 import { Plus, Trash2, Pencil, X, MapPin } from 'lucide-react';
+import { useTableSort } from '@/hooks/useTableSort';
+
+const inp: React.CSSProperties = { width: '100%', padding: '9px 12px', background: '#080808', border: '1px solid #1e1e1e', borderRadius: 5, color: '#e0e0e0', fontSize: 12, outline: 'none' };
 
 export default function AdminVenues() {
   const [showModal, setShowModal] = useState(false);
@@ -13,175 +16,102 @@ export default function AdminVenues() {
   const { data: venues, isLoading } = useQuery({
     queryKey: ['admin', 'venues'],
     queryFn: async () => {
-      const { data } = await supabase
-        .from('ir_vanues')
-        .select('id, title, citys_id, provinces_id, countries_id, created_at')
-        .order('created_at', { ascending: false });
+      const { data } = await supabase.from('ir_vanues').select('id, title, citys_id, created_at').order('created_at', { ascending: false });
       return data || [];
     },
   });
 
   const { data: cities } = useQuery({
     queryKey: ['cities'],
-    queryFn: async () => {
-      const { data } = await supabase.from('ir_citys').select('id, title');
-      return data || [];
-    },
+    queryFn: async () => { const { data } = await supabase.from('ir_citys').select('id, title'); return data || []; },
   });
 
   const createMutation = useMutation({
-    mutationFn: async (venueTitle: string) => {
-      const { error } = await supabase.from('ir_vanues').insert({
-        title: venueTitle,
-        citys_id: 1,
-        provinces_id: 1,
-        countries_id: 1,
-        created_at: Math.floor(Date.now() / 1000),
-      });
+    mutationFn: async (t: string) => {
+      const { error } = await supabase.from('ir_vanues').insert({ title: t, citys_id: 1, provinces_id: 1, countries_id: 1, created_at: Math.floor(Date.now() / 1000) });
       if (error) throw error;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['admin', 'venues'] });
-      toast.success('Venue created');
-      setShowModal(false);
-      setTitle('');
-    },
-    onError: () => toast.error('Failed to create venue'),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['admin', 'venues'] }); toast.success('Venue created'); setShowModal(false); setTitle(''); },
+    onError: () => toast.error('Failed'),
   });
 
   const updateMutation = useMutation({
     mutationFn: async ({ id, title }: { id: number; title: string }) => {
-      const { error } = await supabase
-        .from('ir_vanues')
-        .update({ title, updated_at: Math.floor(Date.now() / 1000) })
-        .eq('id', id);
+      const { error } = await supabase.from('ir_vanues').update({ title, updated_at: Math.floor(Date.now() / 1000) }).eq('id', id);
       if (error) throw error;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['admin', 'venues'] });
-      toast.success('Venue updated');
-      setEditItem(null);
-      setShowModal(false);
-      setTitle('');
-    },
-    onError: () => toast.error('Failed to update venue'),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['admin', 'venues'] }); toast.success('Updated'); setEditItem(null); setShowModal(false); setTitle(''); },
+    onError: () => toast.error('Failed'),
   });
 
   const deleteMutation = useMutation({
-    mutationFn: async (id: number) => {
-      const { error } = await supabase.from('ir_vanues').delete().eq('id', id);
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['admin', 'venues'] });
-      toast.success('Venue deleted');
-    },
-    onError: () => toast.error('Failed to delete venue'),
+    mutationFn: async (id: number) => { const { error } = await supabase.from('ir_vanues').delete().eq('id', id); if (error) throw error; },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['admin', 'venues'] }); toast.success('Deleted'); },
+    onError: () => toast.error('Failed'),
   });
 
+  const { sorted: sortedVenues } = useTableSort(venues, 'title' as any, 'asc');
+
   return (
-    <div className="p-6 lg:p-8 space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-white">Venues</h1>
-          <p className="text-slate-400 mt-1">Manage event venues</p>
+    <div style={{ padding: '24px 28px 48px' }}>
+      <div style={{ marginBottom: 20 }}>
+        <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }}>
+          <div>
+            <h1 style={{ fontSize: 17, fontWeight: 600, color: '#ececec', letterSpacing: '-0.3px', lineHeight: 1 }}>Venues</h1>
+            <p style={{ fontSize: 11, color: '#888', marginTop: 4 }}>{venues?.length ?? 0} venues · sorted A-Z</p>
+          </div>
+          <button onClick={() => { setEditItem(null); setTitle(''); setShowModal(true); }} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px', background: '#fff', border: 'none', borderRadius: 5, color: '#000', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>
+            <Plus size={12} /> Add Venue
+          </button>
         </div>
-        <button
-          onClick={() => { setEditItem(null); setTitle(''); setShowModal(true); }}
-          className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-xl transition-all cursor-pointer"
-        >
-          <Plus size={16} />
-          Add Venue
-        </button>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 10 }}>
         {isLoading ? (
-          Array.from({ length: 6 }).map((_, i) => (
-            <div key={i} className="bg-slate-900/50 border border-slate-800/50 rounded-2xl p-5 animate-pulse">
-              <div className="h-4 bg-slate-800 rounded w-3/4 mb-2" />
-              <div className="h-3 bg-slate-800/50 rounded w-1/2" />
-            </div>
-          ))
-        ) : venues?.length === 0 ? (
-          <div className="col-span-full py-12 text-center text-slate-500">No venues yet</div>
-        ) : (
-          venues?.map((venue) => (
-            <div
-              key={venue.id}
-              className="bg-slate-900/50 border border-slate-800/50 rounded-2xl p-5 hover:border-slate-700/50 transition-all group"
-            >
-              <div className="flex items-start justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-indigo-500/10 flex items-center justify-center">
-                    <MapPin size={18} className="text-indigo-400" />
-                  </div>
-                  <div>
-                    <p className="font-medium text-white">{venue.title}</p>
-                    <p className="text-xs text-slate-500 mt-0.5">
-                      {cities?.find((c) => c.id === venue.citys_id)?.title || `City #${venue.citys_id}`}
-                    </p>
-                  </div>
+          <div style={{ gridColumn: '1/-1', padding: '40px', textAlign: 'center', color: '#333', fontSize: 12 }}>Loading…</div>
+        ) : (sortedVenues?.length ?? 0) === 0 ? (
+          <div style={{ gridColumn: '1/-1', padding: '40px', textAlign: 'center', color: '#333', fontSize: 12 }}>No venues yet</div>
+        ) : sortedVenues?.map((venue) => (
+          <div key={venue.id} style={{ background: '#0a0a0a', border: '1px solid #1a1a1a', borderRadius: 6, padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div style={{ width: 36, height: 36, background: '#0e0e0e', border: '1px solid #1e1e1e', borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#333', flexShrink: 0 }}>
+                  <MapPin size={16} />
                 </div>
-                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <button
-                    onClick={() => { setEditItem({ id: venue.id, title: venue.title }); setTitle(venue.title); setShowModal(true); }}
-                    className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-800/50 cursor-pointer"
-                  >
-                    <Pencil size={14} />
-                  </button>
-                  <button
-                    onClick={() => {
-                      if (confirm('Delete this venue?')) deleteMutation.mutate(venue.id);
-                    }}
-                    className="p-1.5 rounded-lg text-red-400 hover:bg-red-500/10 cursor-pointer"
-                  >
-                    <Trash2 size={14} />
-                  </button>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: '#d8d8d8', lineHeight: 1.2 }}>{venue.title}</div>
+                  <div style={{ fontSize: 11, color: '#484848', marginTop: 2 }}>
+                    {cities?.find((c) => c.id === venue.citys_id)?.title || `City #${venue.citys_id}`}
+                  </div>
                 </div>
               </div>
+              <div style={{ display: 'flex', gap: 2, flexShrink: 0 }}>
+                <button onClick={() => { setEditItem({ id: venue.id, title: venue.title }); setTitle(venue.title); setShowModal(true); }} style={{ background: 'none', border: 'none', color: '#333', cursor: 'pointer', padding: '4px 5px', display: 'flex', borderRadius: 4 }}>
+                  <Pencil size={13} />
+                </button>
+                <button onClick={() => { if (confirm('Delete this venue?')) deleteMutation.mutate(venue.id); }} style={{ background: 'none', border: 'none', color: '#4a1a1a', cursor: 'pointer', padding: '4px 5px', display: 'flex', borderRadius: 4 }}>
+                  <Trash2 size={13} />
+                </button>
+              </div>
             </div>
-          ))
-        )}
+          </div>
+        ))}
       </div>
 
-      {/* Modal */}
       {showModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-slate-900 border border-slate-700/50 rounded-2xl w-full max-w-sm shadow-2xl">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800/50">
-              <h2 className="text-lg font-semibold text-white">
-                {editItem ? 'Edit Venue' : 'Add Venue'}
-              </h2>
-              <button onClick={() => setShowModal(false)} className="text-slate-400 hover:text-white cursor-pointer">
-                <X size={20} />
-              </button>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 20 }}>
+          <div style={{ background: '#0c0c0c', border: '1px solid #1e1e1e', borderRadius: 6, width: '100%', maxWidth: 400, boxShadow: '0 20px 60px rgba(0,0,0,0.9)' }} className="ds-fade">
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 20px', borderBottom: '1px solid #141414' }}>
+              <span style={{ fontSize: 13, fontWeight: 600, color: '#d0d0d0' }}>{editItem ? 'Edit Venue' : 'Add Venue'}</span>
+              <button onClick={() => setShowModal(false)} style={{ background: 'none', border: 'none', color: '#444', cursor: 'pointer', padding: 4, display: 'flex', borderRadius: 4 }}><X size={14} /></button>
             </div>
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                if (editItem) {
-                  updateMutation.mutate({ id: editItem.id, title });
-                } else {
-                  createMutation.mutate(title);
-                }
-              }}
-              className="p-6 space-y-4"
-            >
+            <form onSubmit={(e) => { e.preventDefault(); editItem ? updateMutation.mutate({ id: editItem.id, title }) : createMutation.mutate(title); }} style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
               <div>
-                <label className="block text-sm text-slate-300 mb-1.5">Venue Name</label>
-                <input
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  className="w-full px-4 py-2.5 bg-slate-800/50 border border-slate-700/50 rounded-xl text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
-                  required
-                />
+                <label style={{ display: 'block', fontSize: 11, fontWeight: 500, color: '#666', marginBottom: 6 }}>Venue Name</label>
+                <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Club Deur" style={inp} required autoFocus />
               </div>
-              <button
-                type="submit"
-                className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-medium rounded-xl transition-all cursor-pointer"
-              >
-                {editItem ? 'Update' : 'Create'}
+              <button type="submit" style={{ padding: '10px', background: '#fff', border: 'none', borderRadius: 5, color: '#000', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                {editItem ? 'Save Changes' : 'Create Venue'}
               </button>
             </form>
           </div>

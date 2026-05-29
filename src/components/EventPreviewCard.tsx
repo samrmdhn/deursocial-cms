@@ -1,5 +1,5 @@
 import React from 'react';
-import { CalendarDays, Heart, MapPin } from 'lucide-react';
+import { CalendarDays, MapPin } from 'lucide-react';
 
 interface EventPreviewCardProps {
   form: {
@@ -15,107 +15,71 @@ interface EventPreviewCardProps {
 
 function formatDateRange(start: string, end: string) {
   if (!start) return 'No Date';
-  
-  const options: Intl.DateTimeFormatOptions = {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-  };
-
-  const startDate = new Date(start);
-  const formattedStart = startDate.toLocaleDateString('id-ID', options);
-
-  if (!end) return formattedStart;
-
-  const endDate = new Date(end);
-  const formattedEnd = endDate.toLocaleDateString('id-ID', options);
-
-  if (formattedStart === formattedEnd) return formattedStart;
-  return `${formattedStart} - ${formattedEnd}`;
+  const opts: Intl.DateTimeFormatOptions = { day: '2-digit', month: 'short', year: 'numeric' };
+  const s = new Date(start).toLocaleDateString('id-ID', opts);
+  if (!end) return s;
+  const e = new Date(end).toLocaleDateString('id-ID', opts);
+  return s === e ? s : `${s} – ${e}`;
 }
 
 export default function EventPreviewCard({ form, imagePreview, venues }: EventPreviewCardProps) {
-  // Try to find the selected venue
-  const selectedVenue = venues?.find((v) => v.id.toString() === form.vanues_id);
-  const venueName = selectedVenue ? selectedVenue.title : 'Select Venue...';
-
-  // Status badge logic
-  const isOngoing = form.status === 1;
-  const isUpcoming = form.status === 2 || !form.status;
+  const venueName = venues?.find((v) => v.id.toString() === form.vanues_id)?.title || 'Select Venue…';
+  const statusMap: Record<number, { label: string; bg: string; border: string; dot: string; text: string }> = {
+    0: { label: 'Ended',    bg: 'rgba(80,80,80,0.15)',   border: 'rgba(80,80,80,0.3)',   dot: '#555',     text: '#999' },
+    1: { label: 'Ongoing',  bg: 'rgba(34,197,94,0.15)',  border: 'rgba(34,197,94,0.3)',  dot: '#22c55e',  text: '#86efac' },
+    2: { label: 'Upcoming', bg: 'rgba(59,130,246,0.15)', border: 'rgba(59,130,246,0.3)', dot: '#60a5fa',  text: '#93c5fd' },
+  };
+  const st = statusMap[form.status ?? 2] ?? statusMap[2];
 
   return (
-    <div className="relative shrink-0 snap-center rounded-[22px] overflow-hidden bg-slate-900 border border-white/5 w-64 aspect-[55/74] shadow-2xl">
-      {/* Background Image */}
-      {imagePreview ? (
-        <img
-          src={imagePreview}
-          alt={form.title}
-          className="absolute inset-0 w-full h-full object-cover"
-        />
-      ) : (
-        <div className="absolute inset-0 bg-slate-800 flex items-center justify-center">
-          <span className="text-slate-500 text-5xl font-bold">
-            {form.title?.slice(0, 2).toUpperCase() || '?'}
-          </span>
-        </div>
-      )}
-
-      {/* Gradient */}
-      <div className="absolute inset-0 bg-gradient-to-t from-black via-black/50 to-transparent" />
-
-      {/* Top Actions */}
-      <div className="absolute top-4 left-4 right-4 flex items-start justify-between z-10">
-        {isOngoing ? (
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 backdrop-blur-md">
-            <div className="w-2 h-2 rounded-full bg-emerald-500" />
-            <span className="text-[10px] font-medium text-emerald-300 uppercase tracking-wider">
-              On Going
-            </span>
-          </div>
+    <div style={{ width: 280, borderRadius: 14, overflow: 'hidden', background: '#111', border: '1px solid #1a1a1a', boxShadow: '0 8px 32px rgba(0,0,0,0.6)' }}>
+      {/* Image — 16:9 */}
+      <div style={{ width: '100%', aspectRatio: '16/9', background: '#0e0e0e', position: 'relative', overflow: 'hidden' }}>
+        {imagePreview ? (
+          <img src={imagePreview} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
         ) : (
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-blue-500/10 border border-blue-500/20 backdrop-blur-md">
-            <div className="w-2 h-2 rounded-full bg-blue-400" />
-            <span className="text-[10px] font-medium text-blue-300 uppercase tracking-wider">
-              Upcoming
-            </span>
+          <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <span style={{ fontSize: 32, fontWeight: 800, color: '#2a2a2a' }}>{form.title?.slice(0, 2).toUpperCase() || '?'}</span>
           </div>
         )}
-
-        <button className="w-9 h-9 rounded-full bg-black/20 border border-white/10 flex items-center justify-center backdrop-blur-md">
-          <Heart size={18} className="text-white" strokeWidth={1.5} />
-        </button>
+        {/* Status badge top-left */}
+        <div style={{
+          position: 'absolute', top: 10, left: 10,
+          display: 'flex', alignItems: 'center', gap: 5,
+          padding: '4px 10px', borderRadius: 20,
+          background: st.bg, border: `1px solid ${st.border}`,
+          backdropFilter: 'blur(8px)',
+        }}>
+          <div style={{ width: 6, height: 6, borderRadius: '50%', background: st.dot }} />
+          <span style={{ fontSize: 9, fontWeight: 600, letterSpacing: '0.8px', textTransform: 'uppercase', color: st.text }}>
+            {st.label}
+          </span>
+        </div>
       </div>
 
-      {/* Bottom Content */}
-      <div className="absolute bottom-0 left-0 right-0 p-5 gap-3 flex flex-col z-10">
-        <div>
-          <h3 className="text-lg font-semibold text-white mb-2 leading-tight line-clamp-2 drop-shadow-md">
-            {form.title || 'Event Title'}
-          </h3>
-
-          <div className="space-y-1.5">
-            <div className="flex items-center gap-2 text-slate-300 drop-shadow-md">
-              <MapPin size={14} className="text-slate-400" strokeWidth={1.5} />
-              <p className="text-xs line-clamp-1">{venueName}</p>
-            </div>
-
-            <div className="flex items-center gap-2 text-slate-300 drop-shadow-md">
-              <CalendarDays size={14} className="text-slate-400" strokeWidth={1.5} />
-              <p className="text-xs">{formatDateRange(form.date_start, form.date_end)}</p>
-            </div>
+      {/* Text content below image */}
+      <div style={{ padding: '12px 14px 14px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <div style={{ fontSize: 15, fontWeight: 800, color: '#e8e8e8', letterSpacing: -0.4, lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {form.title || 'Event Title'}
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <MapPin size={11} style={{ color: '#555', flexShrink: 0 }} strokeWidth={1.5} />
+            <span style={{ fontSize: 11, color: '#888', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{venueName}</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <CalendarDays size={11} style={{ color: '#555', flexShrink: 0 }} strokeWidth={1.5} />
+            <span style={{ fontSize: 11, color: '#888' }}>{formatDateRange(form.date_start, form.date_end)}</span>
           </div>
         </div>
-
-        {/* Dummy Followers for Preview */}
-        <div className="flex items-center mt-1">
-          <div className="flex -space-x-2">
-            <div className="w-6 h-6 rounded-full border border-slate-900 bg-indigo-500" />
-            <div className="w-6 h-6 rounded-full border border-slate-900 bg-violet-500" />
-            <div className="w-6 h-6 rounded-full border border-slate-900 bg-fuchsia-500" />
+        {/* Dummy followers */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
+          <div style={{ display: 'flex' }}>
+            {['#6366f1', '#8b5cf6', '#d946ef'].map((c, i) => (
+              <div key={i} style={{ width: 18, height: 18, borderRadius: '50%', background: c, border: '1.5px solid #111', marginLeft: i === 0 ? 0 : -5 }} />
+            ))}
           </div>
-          <span className="text-[10px] text-white/80 ml-2 drop-shadow-md">
-            • 0 followers
-          </span>
+          <span style={{ fontSize: 10, color: '#555' }}>0 followers</span>
         </div>
       </div>
     </div>

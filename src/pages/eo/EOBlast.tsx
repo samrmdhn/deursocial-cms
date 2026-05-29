@@ -3,8 +3,11 @@ import { useQuery, useMutation } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/stores/authStore';
 import toast from 'react-hot-toast';
-import { Send, MessageSquare, Image as ImageIcon, Upload, X } from 'lucide-react';
+import { Send, MessageSquare, Upload, X } from 'lucide-react';
 import { uploadImageToBucket } from '@/lib/upload';
+
+const inp: React.CSSProperties = { width: '100%', padding: '9px 12px', background: '#080808', border: '1px solid #1e1e1e', borderRadius: 5, color: '#e0e0e0', fontSize: 12, outline: 'none' };
+const lbl: React.CSSProperties = { display: 'block', fontSize: 11, fontWeight: 500, color: '#666', marginBottom: 6 };
 
 export default function EOBlast() {
   const user = useAuthStore((s) => s.user);
@@ -36,11 +39,7 @@ export default function EOBlast() {
     queryKey: ['eo', 'events-for-blast', eoId],
     queryFn: async () => {
       if (!eoId) return [];
-      const { data } = await supabase
-        .from('ir_content_details')
-        .select('id, title, slug')
-        .eq('event_organizers_id', eoId)
-        .order('created_at', { ascending: false });
+      const { data } = await supabase.from('ir_content_details').select('id, title, slug').eq('event_organizers_id', eoId).order('created_at', { ascending: false });
       return data || [];
     },
     enabled: !!eoId,
@@ -50,11 +49,7 @@ export default function EOBlast() {
     queryKey: ['eo', 'event-groups', selectedEvent],
     queryFn: async () => {
       if (!selectedEvent) return [];
-      const { data } = await supabase
-        .from('ir_groups')
-        .select('id, title, slug, max_members')
-        .eq('content_details_id', Number(selectedEvent))
-        .eq('status', 1);
+      const { data } = await supabase.from('ir_groups').select('id, title, slug, max_members').eq('content_details_id', Number(selectedEvent)).eq('status', 1);
       return data || [];
     },
     enabled: !!selectedEvent,
@@ -65,14 +60,8 @@ export default function EOBlast() {
       if (!groups || groups.length === 0) throw new Error('No groups');
       if (!user?.id) throw new Error('Not logged in');
       const now = Math.floor(Date.now() / 1000);
-
-      // Fetch EO details for the chat message avatar and name
-      const { data: eoData } = await supabase
-        .from('ir_event_organizers')
-        .select('name, image')
-        .eq('id', eoId)
-        .single();
-      const eoName = eoData?.name || "Official Organizer";
+      const { data: eoData } = await supabase.from('ir_event_organizers').select('name, image').eq('id', eoId).single();
+      const eoName = eoData?.name || 'Official Organizer';
       const eoImage = eoData?.image || null;
 
       let finalImageUrl = null;
@@ -91,21 +80,18 @@ export default function EOBlast() {
       });
       if (error) throw error;
 
-      // ALSO insert into chat group `messages` table so it shows up in the chat history!
-      // Using `eo_blast_` prefix in username to flag it as an official blast in the mobile app UI
       const chatMessages = groups.map(g => ({
         group_slug: g.slug,
         user_id: `eo_${eoId}`,
         display_name: eoName,
         user_image: eoImage,
-        username: messageCategory === 'ads' ? "eo_official_ad" : "eo_official_statement",
-        message: (blastType === 'text' || blastType === 'both') ? message : "📸 Image",
-        message_type: finalImageUrl ? "image" : "text",
-        image_url: finalImageUrl
+        username: messageCategory === 'ads' ? 'eo_official_ad' : 'eo_official_statement',
+        message: (blastType === 'text' || blastType === 'both') ? message : '📸 Image',
+        message_type: finalImageUrl ? 'image' : 'text',
+        image_url: finalImageUrl,
       }));
-      
       const { error: chatError } = await supabase.from('messages').insert(chatMessages);
-      if (chatError) console.error("Failed to insert into group chats:", chatError);
+      if (chatError) console.error('Failed to insert into group chats:', chatError);
     },
     onSuccess: () => {
       toast.success(`Blast sent to ${groups?.length} groups!`);
@@ -114,116 +100,93 @@ export default function EOBlast() {
     },
     onError: (err) => {
       console.error(err);
-      toast.error('Failed to send blast. Check if messages table exists.');
+      toast.error('Failed to send blast.');
     },
   });
 
+  const canSend = !!selectedEvent && (blastType === 'image' ? !!imageFile : !!message.trim()) && !blastMutation.isPending;
+
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-2xl">
-      <div>
-        <h1 className="text-2xl font-bold text-white">Blast Messages</h1>
-        <p className="text-slate-400 mt-1">Send promotional messages to event chat groups</p>
+    <div style={{ padding: '24px 28px 48px', maxWidth: 560 }}>
+      <div style={{ marginBottom: 20 }}>
+        <h1 style={{ fontSize: 17, fontWeight: 600, color: '#ececec', letterSpacing: '-0.3px', lineHeight: 1 }}>Blast Messages</h1>
+        <p style={{ fontSize: 11, color: '#555', marginTop: 4 }}>Send promotional messages to event chat groups</p>
       </div>
 
-      <div className="bg-slate-900/50 border border-slate-800/50 rounded-2xl p-6 space-y-5">
-        {/* Event Selection */}
+      <div style={{ background: '#0a0a0a', border: '1px solid #1a1a1a', borderRadius: 6, padding: 20, display: 'flex', flexDirection: 'column', gap: 16 }}>
+        {/* Event */}
         <div>
-          <label className="block text-sm text-slate-300 mb-1.5">Select Event</label>
-          <select
-            value={selectedEvent}
-            onChange={(e) => setSelectedEvent(e.target.value)}
-            className="w-full px-4 py-3 bg-slate-800/50 border border-slate-700/50 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-violet-500/50"
-          >
-            <option value="">Select event...</option>
+          <label style={lbl}>Select Event</label>
+          <select value={selectedEvent} onChange={(e) => setSelectedEvent(e.target.value)} style={inp}>
+            <option value="">Select event…</option>
             {events?.map((e) => <option key={e.id} value={e.id}>{e.title}</option>)}
           </select>
         </div>
 
-        {/* Groups Info */}
+        {/* Groups info */}
         {selectedEvent && (
-          <div className="bg-slate-800/30 rounded-xl p-4">
-            <p className="text-sm text-slate-300">
-              <MessageSquare size={14} className="inline mr-1.5 text-violet-400" />
+          <div style={{ background: '#060606', border: '1px solid #141414', borderRadius: 5, padding: '10px 14px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#888' }}>
+              <MessageSquare size={12} style={{ color: '#555' }} />
               {groups?.length || 0} groups will receive this blast
-            </p>
+            </div>
             {groups && groups.length > 0 && (
-              <div className="mt-2 flex flex-wrap gap-2">
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
                 {groups.map((g) => (
-                  <span key={g.id} className="text-xs px-2 py-1 bg-slate-700/50 rounded-lg text-slate-300">
-                    {g.title}
-                  </span>
+                  <span key={g.id} style={{ fontSize: 10, padding: '3px 8px', background: '#0e0e0e', border: '1px solid #1e1e1e', borderRadius: 3, color: '#888' }}>{g.title}</span>
                 ))}
               </div>
             )}
           </div>
         )}
-        
-        {/* Message Category */}
+
+        {/* Category */}
         <div>
-          <label className="block text-sm text-slate-300 mb-1.5">Blast Category</label>
-          <div className="flex gap-3">
+          <label style={lbl}>Blast Category</label>
+          <div style={{ display: 'flex', gap: 8 }}>
             {(['statement', 'ads'] as const).map((cat) => (
-              <button
-                key={cat}
-                type="button"
-                onClick={() => setMessageCategory(cat)}
-                className={`flex-1 p-3 rounded-xl border text-sm font-medium transition-all cursor-pointer ${
-                  messageCategory === cat
-                    ? 'bg-indigo-500/15 border-indigo-500/30 text-indigo-400'
-                    : 'border-slate-700/50 text-slate-400 hover:border-slate-600'
-                }`}
-              >
+              <button key={cat} type="button" onClick={() => setMessageCategory(cat)}
+                style={{ flex: 1, padding: '8px', borderRadius: 5, border: `1px solid ${messageCategory === cat ? '#333' : '#1e1e1e'}`, cursor: 'pointer', background: messageCategory === cat ? '#111' : '#080808', color: messageCategory === cat ? '#d0d0d0' : '#555', fontSize: 11, fontWeight: 500 }}>
                 {cat === 'statement' ? 'Official Statement' : 'Advertisement'}
               </button>
             ))}
           </div>
         </div>
 
-        {/* Blast Type */}
+        {/* Type */}
         <div>
-          <label className="block text-sm text-slate-300 mb-1.5">Message Type</label>
-          <div className="flex gap-3">
+          <label style={lbl}>Message Type</label>
+          <div style={{ display: 'flex', gap: 8 }}>
             {([
               { key: 'text', label: 'Text Only' },
               { key: 'image', label: 'Image Only' },
               { key: 'both', label: 'Image + Text' },
             ] as const).map((t) => (
-              <button
-                key={t.key}
-                type="button"
-                onClick={() => setBlastType(t.key)}
-                className={`flex-1 p-3 rounded-xl border text-sm font-medium transition-all cursor-pointer ${
-                  blastType === t.key
-                    ? 'bg-violet-500/15 border-violet-500/30 text-violet-400'
-                    : 'border-slate-700/50 text-slate-400 hover:border-slate-600'
-                }`}
-              >
+              <button key={t.key} type="button" onClick={() => setBlastType(t.key)}
+                style={{ flex: 1, padding: '8px', borderRadius: 5, border: `1px solid ${blastType === t.key ? '#333' : '#1e1e1e'}`, cursor: 'pointer', background: blastType === t.key ? '#111' : '#080808', color: blastType === t.key ? '#d0d0d0' : '#555', fontSize: 11, fontWeight: 500 }}>
                 {t.label}
               </button>
             ))}
           </div>
         </div>
 
-        {/* Image Upload */}
+        {/* Image upload */}
         {(blastType === 'image' || blastType === 'both') && (
           <div>
-            <label className="block text-sm text-slate-300 mb-1.5">Attach Image</label>
+            <label style={lbl}>Attach Image</label>
             {imagePreview ? (
-              <div className="relative w-full h-40 rounded-xl overflow-hidden border border-slate-700/50">
-                <img src={imagePreview} alt="Preview" className="w-full h-full object-cover" />
-                <button
-                  type="button"
-                  onClick={removeImage}
-                  className="absolute top-2 right-2 p-1.5 bg-black/50 hover:bg-black/80 text-white rounded-lg transition-all"
-                >
-                  <X size={16} />
+              <div style={{ position: 'relative', width: '100%', height: 140, borderRadius: 5, overflow: 'hidden', border: '1px solid #1e1e1e' }}>
+                <img src={imagePreview} alt="Preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                <button type="button" onClick={removeImage}
+                  style={{ position: 'absolute', top: 8, right: 8, background: 'rgba(0,0,0,0.7)', border: 'none', borderRadius: 4, color: '#fff', cursor: 'pointer', padding: '4px 6px', display: 'flex', alignItems: 'center' }}>
+                  <X size={13} />
                 </button>
               </div>
             ) : (
-              <label className="flex flex-col items-center justify-center w-full h-24 bg-slate-800/50 border border-slate-700/50 border-dashed rounded-xl cursor-pointer hover:bg-slate-800 transition-colors">
-                <Upload className="text-slate-400 mb-2" size={20} />
-                <span className="text-sm text-slate-400">Click to upload image</span>
-                <input type="file" accept="image/*" className="hidden" onChange={handleImageChange} />
+              <label style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', width: '100%', height: 70, background: '#080808', border: '1px dashed #1e1e1e', borderRadius: 5, cursor: 'pointer', gap: 5 }}>
+                <Upload size={15} style={{ color: '#444' }} />
+                <span style={{ fontSize: 11, color: '#444' }}>Click to upload image</span>
+                <input type="file" accept="image/*" style={{ display: 'none' }} onChange={handleImageChange} />
               </label>
             )}
           </div>
@@ -232,30 +195,19 @@ export default function EOBlast() {
         {/* Message */}
         {(blastType === 'text' || blastType === 'both') && (
           <div>
-            <label className="block text-sm text-slate-300 mb-1.5">Message</label>
-            <textarea
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-              placeholder="Type your blast message..."
-              className="w-full px-4 py-3 bg-slate-800/50 border border-slate-700/50 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-violet-500/50 h-28 resize-none"
-            />
+            <label style={lbl}>Message</label>
+            <textarea value={message} onChange={(e) => setMessage(e.target.value)}
+              placeholder="Type your blast message…" rows={4}
+              style={{ ...inp, resize: 'none' }} />
           </div>
         )}
 
-        {/* Send */}
-        <button
-          onClick={() => blastMutation.mutate()}
-          disabled={!selectedEvent || (!message && !imageFile) || blastMutation.isPending}
-          className="w-full py-3 bg-violet-600 hover:bg-violet-500 text-white font-semibold rounded-xl transition-all flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
-        >
-          {blastMutation.isPending ? (
-            <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-          ) : (
-            <>
-              <Send size={18} />
-              Send Blast to {groups?.length || 0} Groups
-            </>
-          )}
+        <button onClick={() => blastMutation.mutate()} disabled={!canSend}
+          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '11px', background: canSend ? '#fff' : '#0d0d0d', border: 'none', borderRadius: 5, color: canSend ? '#000' : '#333', fontSize: 12, fontWeight: 600, cursor: canSend ? 'pointer' : 'default' }}>
+          {blastMutation.isPending
+            ? <><div style={{ width: 14, height: 14, border: '2px solid #444', borderTopColor: '#888', borderRadius: '50%' }} className="ds-spin" /> Sending…</>
+            : <><Send size={13} /> Send Blast to {groups?.length || 0} Groups</>
+          }
         </button>
       </div>
     </div>

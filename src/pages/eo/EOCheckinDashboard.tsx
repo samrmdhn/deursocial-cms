@@ -19,10 +19,7 @@ export default function EOCheckinDashboard() {
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
 
   const fetchData = async () => {
-    const { count } = await supabase
-      .from('ir_event_checkins')
-      .select('id', { count: 'exact', head: true })
-      .eq('event_slug', eventSlug);
+    const { count } = await supabase.from('ir_event_checkins').select('id', { count: 'exact', head: true }).eq('event_slug', eventSlug);
     setTotal(count ?? 0);
 
     const { data: feedData } = await supabase
@@ -33,10 +30,7 @@ export default function EOCheckinDashboard() {
       .limit(50);
     setFeed((feedData as CheckinRow[]) ?? []);
 
-    const { data: allCheckins } = await supabase
-      .from('ir_event_checkins')
-      .select('day_index')
-      .eq('event_slug', eventSlug);
+    const { data: allCheckins } = await supabase.from('ir_event_checkins').select('day_index').eq('event_slug', eventSlug);
     const pd: Record<number, number> = {};
     (allCheckins ?? []).forEach((r) => { pd[r.day_index] = (pd[r.day_index] ?? 0) + 1; });
     setPerDay(pd);
@@ -45,43 +39,40 @@ export default function EOCheckinDashboard() {
   useEffect(() => {
     if (!eventSlug) return;
     fetchData();
-
-    // Realtime subscription
     const channel = supabase
       .channel(`checkins-${eventSlug}`)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'ir_event_checkins', filter: `event_slug=eq.${eventSlug}` }, () => {
-        fetchData();
-      })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'ir_event_checkins', filter: `event_slug=eq.${eventSlug}` }, () => { fetchData(); })
       .subscribe();
     channelRef.current = channel;
-
     return () => { channel.unsubscribe(); };
   }, [eventSlug]);
 
   const perDayEntries = Object.entries(perDay).sort(([a], [b]) => Number(a) - Number(b));
 
   return (
-    <div className="min-h-screen bg-slate-950 text-white p-6 space-y-6">
-      <h1 className="text-xl font-bold text-white flex items-center gap-2">
-        <Users size={20} className="text-violet-400" />
-        Check-in Dashboard
-        <span className="text-sm text-slate-400 font-normal ml-1">— {eventSlug}</span>
-      </h1>
+    <div style={{ padding: '24px 28px 48px', display: 'flex', flexDirection: 'column', gap: 20 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <Users size={15} style={{ color: '#555' }} />
+        <h1 style={{ fontSize: 17, fontWeight: 600, color: '#ececec', letterSpacing: '-0.3px' }}>Check-in Dashboard</h1>
+        <span style={{ fontSize: 11, color: '#484848' }}>— {eventSlug}</span>
+      </div>
 
-      {/* Summary cards */}
-      <div className="grid grid-cols-2 gap-4">
-        <div className="bg-slate-800/60 rounded-xl p-4 border border-slate-700/50">
-          <p className="text-xs text-slate-400 mb-1">Total Check-ins</p>
-          <p className="text-3xl font-bold text-violet-400">{total}</p>
+      {/* Stats */}
+      <div style={{ display: 'grid', gridTemplateColumns: perDayEntries.length > 1 ? '1fr 1fr' : '1fr', gap: 10, maxWidth: 520 }}>
+        <div style={{ background: '#0a0a0a', border: '1px solid #1a1a1a', borderRadius: 6, padding: '18px 20px' }}>
+          <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.8px', textTransform: 'uppercase', color: '#444', marginBottom: 10 }}>Total Check-ins</div>
+          <div style={{ fontSize: 32, fontWeight: 700, letterSpacing: '-1.5px', color: '#ececec' }}>{total}</div>
         </div>
         {perDayEntries.length > 1 && (
-          <div className="bg-slate-800/60 rounded-xl p-4 border border-slate-700/50">
-            <p className="text-xs text-slate-400 mb-2 flex items-center gap-1"><BarChart2 size={12} /> Per Day</p>
-            <div className="space-y-1">
+          <div style={{ background: '#0a0a0a', border: '1px solid #1a1a1a', borderRadius: 6, padding: '18px 20px' }}>
+            <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.8px', textTransform: 'uppercase', color: '#444', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 5 }}>
+              <BarChart2 size={11} /> Per Day
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               {perDayEntries.map(([day, count]) => (
-                <div key={day} className="flex justify-between text-sm">
-                  <span className="text-slate-400">Day {Number(day) + 1}</span>
-                  <span className="text-white font-semibold">{count}</span>
+                <div key={day} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: 11, color: '#555' }}>Day {Number(day) + 1}</span>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: '#d0d0d0' }}>{count}</span>
                 </div>
               ))}
             </div>
@@ -90,39 +81,36 @@ export default function EOCheckinDashboard() {
       </div>
 
       {/* Live feed */}
-      <div className="bg-slate-800/60 rounded-xl border border-slate-700/50 overflow-hidden">
-        <div className="px-4 py-3 border-b border-slate-700/50 flex items-center gap-2">
-          <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-          <p className="text-sm font-semibold text-slate-200">Live feed</p>
+      <div style={{ background: '#0a0a0a', border: '1px solid #1a1a1a', borderRadius: 6, overflow: 'hidden', maxWidth: 520 }}>
+        <div style={{ padding: '10px 16px', borderBottom: '1px solid #111', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ width: 7, height: 7, borderRadius: '50%', background: '#22c55e' }} className="ds-pulse" />
+          <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: '1px', textTransform: 'uppercase', color: '#444' }}>Live Feed</span>
         </div>
         {feed.length === 0 ? (
-          <p className="text-slate-500 text-sm text-center py-8">No check-ins yet.</p>
+          <div style={{ padding: '32px 16px', textAlign: 'center', fontSize: 11, color: '#333' }}>No check-ins yet.</div>
         ) : (
-          <div className="divide-y divide-slate-700/40">
-            {feed.map((row) => (
-              <div key={row.id} className="flex items-center gap-3 px-4 py-3">
-                <div className="w-9 h-9 rounded-full bg-slate-700 overflow-hidden shrink-0">
+          <div>
+            {feed.map((row, i) => (
+              <div key={row.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', borderBottom: i < feed.length - 1 ? '1px solid #0f0f0f' : 'none' }}>
+                <div style={{ width: 32, height: 32, borderRadius: '50%', background: '#111', border: '1px solid #1e1e1e', overflow: 'hidden', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   {row.ir_users?.photo ? (
                     <img
                       src={row.ir_users.photo.startsWith('http') ? row.ir_users.photo : `${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/post-images/${row.ir_users.photo}`}
-                      alt=""
-                      className="w-full h-full object-cover"
+                      alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                     />
                   ) : (
-                    <div className="w-full h-full flex items-center justify-center text-xs text-slate-400">
-                      {row.ir_users?.display_name?.[0]?.toUpperCase() ?? '?'}
-                    </div>
+                    <span style={{ fontSize: 11, color: '#555' }}>{row.ir_users?.display_name?.[0]?.toUpperCase() ?? '?'}</span>
                   )}
                 </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-white truncate">{row.ir_users?.display_name ?? 'Unknown'}</p>
-                  <p className="text-xs text-slate-400">@{row.ir_users?.username ?? '-'}</p>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 12, fontWeight: 500, color: '#d0d0d0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.ir_users?.display_name ?? 'Unknown'}</div>
+                  <div style={{ fontSize: 10, color: '#484848' }}>@{row.ir_users?.username ?? '-'}</div>
                 </div>
-                <div className="flex items-center gap-1 text-xs text-slate-500 shrink-0">
-                  <Clock size={11} />
+                <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 10, color: '#484848', flexShrink: 0 }}>
+                  <Clock size={10} />
                   {new Date(row.checked_in_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}
                   {perDayEntries.length > 1 && (
-                    <span className="ml-1 text-violet-400">Day {row.day_index + 1}</span>
+                    <span style={{ color: '#22c55e', marginLeft: 2 }}>Day {row.day_index + 1}</span>
                   )}
                 </div>
               </div>

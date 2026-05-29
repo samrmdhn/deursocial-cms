@@ -1,7 +1,9 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/stores/authStore';
-import { Calendar, Users, FileText, Image } from 'lucide-react';
+import { Calendar } from 'lucide-react';
+
+const IMG_BASE = `${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/post-images/`;
 
 export default function EODashboard() {
   const user = useAuthStore((s) => s.user);
@@ -11,10 +13,7 @@ export default function EODashboard() {
     queryKey: ['eo', 'event-count', eoId],
     queryFn: async () => {
       if (!eoId) return 0;
-      const { count } = await supabase
-        .from('ir_content_details')
-        .select('*', { count: 'exact', head: true })
-        .eq('event_organizers_id', eoId);
+      const { count } = await supabase.from('ir_content_details').select('*', { count: 'exact', head: true }).eq('event_organizers_id', eoId);
       return count || 0;
     },
     enabled: !!eoId,
@@ -24,63 +23,44 @@ export default function EODashboard() {
     queryKey: ['eo', 'info', eoId],
     queryFn: async () => {
       if (!eoId) return null;
-      const { data } = await supabase
-        .from('ir_event_organizers')
-        .select('*')
-        .eq('id', eoId)
-        .single();
+      const { data } = await supabase.from('ir_event_organizers').select('*').eq('id', eoId).single();
       return data;
     },
     enabled: !!eoId,
   });
 
-  const stats = [
-    { label: 'My Events', value: eventCount ?? '...', icon: <Calendar size={22} />, color: 'text-violet-400', bg: 'bg-violet-500/10 border-violet-500/20' },
-  ];
-
   return (
-    <div className="p-6 lg:p-8 space-y-8">
-      <div>
-        <h1 className="text-2xl font-bold text-white">
-          Welcome, {eoInfo?.name || user?.display_name || 'Event Organizer'}
+    <div style={{ padding: '24px 28px 48px' }}>
+      <div style={{ marginBottom: 24 }}>
+        <h1 style={{ fontSize: 17, fontWeight: 600, color: '#ececec', letterSpacing: '-0.3px', lineHeight: 1 }}>
+          {eoInfo?.name || user?.display_name || 'Dashboard'}
         </h1>
-        <p className="text-slate-400 mt-1">Your Event Organizer dashboard</p>
+        <p style={{ fontSize: 11, color: '#555', marginTop: 4 }}>Event Organizer</p>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {stats.map((s) => (
-          <div key={s.label} className={`${s.bg} border rounded-2xl p-5`}>
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-slate-400">{s.label}</p>
-                <p className={`text-3xl font-bold mt-1 ${s.color}`}>{s.value}</p>
-              </div>
-              <div className={`${s.color} opacity-60`}>{s.icon}</div>
-            </div>
-          </div>
-        ))}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8, marginBottom: 24 }}>
+        <div style={{ background: '#0a0a0a', border: '1px solid #1a1a1a', borderRadius: 6, padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '1.5px', textTransform: 'uppercase', color: '#444' }}>My Events</div>
+          <div style={{ fontSize: 28, fontWeight: 700, letterSpacing: '-1.5px', lineHeight: 1, color: '#ececec' }}>{eventCount ?? '…'}</div>
+        </div>
       </div>
 
-      {/* EO Info */}
       {eoInfo && (
-        <div className="bg-slate-900/50 border border-slate-800/50 rounded-2xl p-6">
-          <h2 className="text-lg font-semibold text-white mb-4">EO Profile</h2>
-          <div className="space-y-3 text-sm">
-            <div className="flex items-center gap-3">
-              {eoInfo.image ? (
-                <img
-                  src={`${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/post-images/${eoInfo.image}`}
-                  alt="" className="w-16 h-16 rounded-xl object-cover"
-                />
-              ) : (
-                <div className="w-16 h-16 rounded-xl bg-violet-500/15 flex items-center justify-center text-violet-400 text-xl font-bold">
-                  {eoInfo.name?.charAt(0)?.toUpperCase()}
-                </div>
-              )}
-              <div>
-                <p className="text-lg font-semibold text-white">{eoInfo.name}</p>
-                <p className="text-slate-400">{eoInfo.detail}</p>
+        <div style={{ background: '#0a0a0a', border: '1px solid #1a1a1a', borderRadius: 6, overflow: 'hidden' }}>
+          <div style={{ padding: '12px 18px', borderBottom: '1px solid #111' }}>
+            <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: '1px', textTransform: 'uppercase', color: '#444' }}>EO Profile</span>
+          </div>
+          <div style={{ padding: '18px 20px', display: 'flex', alignItems: 'center', gap: 16 }}>
+            {eoInfo.image ? (
+              <img src={`${IMG_BASE}${eoInfo.image}`} alt="" style={{ width: 52, height: 52, borderRadius: 6, objectFit: 'cover', border: '1px solid #1e1e1e' }} />
+            ) : (
+              <div style={{ width: 52, height: 52, borderRadius: 6, background: '#0e0e0e', border: '1px solid #1e1e1e', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, fontWeight: 700, color: '#444' }}>
+                {eoInfo.name?.charAt(0)?.toUpperCase()}
               </div>
+            )}
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 600, color: '#d8d8d8' }}>{eoInfo.name}</div>
+              {eoInfo.detail && <div style={{ fontSize: 11, color: '#555', marginTop: 3, maxWidth: 380 }}>{eoInfo.detail}</div>}
             </div>
           </div>
         </div>
