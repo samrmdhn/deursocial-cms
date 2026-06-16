@@ -37,6 +37,7 @@ import EOCheckinDashboard from '@/pages/eo/EOCheckinDashboard';
 import EOPostDetail from '@/pages/eo/EOPostDetail';
 import EOMomentDetail from '@/pages/eo/EOMomentDetail';
 import AdminBackgrounds from '@/pages/admin/AdminBackgrounds';
+import AdminBadges from '@/pages/admin/AdminBadges';
 import AdminPassportCosmetics from '@/pages/admin/AdminPassportCosmetics';
 import AdminAds from '@/pages/admin/AdminAds';
 import EOAds from '@/pages/eo/EOAds';
@@ -278,6 +279,12 @@ const adminPassportCosmeticsRoute = createRoute({
   component: AdminPassportCosmetics,
 });
 
+const adminBadgesRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/badges',
+  component: AdminBadges,
+});
+
 const eoAdsRoute = createRoute({
   getParentRoute: () => eoLayoutRoute,
   path: '/ads',
@@ -319,6 +326,7 @@ const routeTree = rootRoute.addChildren([
     adminBackgroundsRoute,
     adminAdsRoute,
     adminPassportCosmeticsRoute,
+    adminBadgesRoute,
     adminUserProfileRoute,
   ]),
   eoLayoutRoute.addChildren([

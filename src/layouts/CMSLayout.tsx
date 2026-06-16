@@ -76,6 +76,7 @@ const adminNavItems: NavItem[] = [
     icon: <Star size={15} />,
     children: [
       { label: 'Cosmetics', to: '/admin/passport-cosmetics' },
+      { label: 'Badges', to: '/admin/badges' },
     ],
   },
 ];
