@@ -59,6 +59,7 @@ function MiniPolaroid({ title, date, rank, bg, photoGradient, photoHeight = 72 }
   );
 }
 
+
 function MapToPolaroidVisual({ ck }: { ck: number }) {
   const isSuccess = ck === 2;
   const cs = CHECK_STATES[ck];
@@ -102,7 +103,7 @@ function MapToPolaroidVisual({ ck }: { ck: number }) {
             <span style={{ fontSize: 10, fontWeight: 700, color: '#fff', fontFamily: 'NimbusSan,sans-serif', letterSpacing: '0.04em' }}>Jiexpo · Kemayoran, Jakarta</span>
           </div>
         </div>
-        <div style={{ position: 'absolute', inset: 0, borderRadius: 20, overflow: 'hidden', background: '#07090F', opacity: isSuccess ? 1 : 0, transform: isSuccess ? 'scale(1)' : 'scale(1.03)', transition: 'all 0.55s cubic-bezier(0.4,0,0.2,1)', pointerEvents: isSuccess ? 'auto' : 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px 20px' }}>
+        <div style={{ position: 'absolute', inset: 0, borderRadius: 20, overflow: 'hidden', background: 'transparent', opacity: isSuccess ? 1 : 0, transform: isSuccess ? 'scale(1)' : 'scale(1.03)', transition: 'all 0.55s cubic-bezier(0.4,0,0.2,1)', pointerEvents: isSuccess ? 'auto' : 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px 20px' }}>
           <div style={{ width: '100%', transform: 'rotate(3deg)' }}>
             <MiniPolaroid title="Echova Fest" date="Mar 2, 2025" rank="42" bg="#1E40AF" photoGradient="linear-gradient(145deg,#0a0e2e 0%,#1e3a8a 60%,#3b82f6 110%)" photoHeight={110} />
           </div>
