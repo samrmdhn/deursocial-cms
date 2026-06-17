@@ -19,6 +19,7 @@
     "@tanstack/react-router": "^1.168.25",
     "axios": "^1.15.2",
     "bcryptjs": "^3.0.3",
+    "framer-motion": "^12.40.0",
     "html2canvas": "^1.4.1",
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.8",

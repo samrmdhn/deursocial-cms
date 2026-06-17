@@ -4,11 +4,45 @@ import {
   createRootRoute,
   redirect,
   Outlet,
+  useParams,
+  useSearch,
 } from '@tanstack/react-router';
 import { useAuthStore } from '@/stores/authStore';
 
 import CMSLayout from '@/layouts/CMSLayout';
 import LoginPage from '@/pages/LoginPage';
+import LandingPage from '@/pages/LandingPage';
+import PrivacyPolicyPage from '@/pages/PrivacyPolicyPage';
+import TermsConditionPage from '@/pages/TermsConditionPage';
+import DeepLinkRedirect from '@/components/DeepLinkRedirect';
+
+// ── Deeplink wrapper components ──
+function EventDeepLink() {
+  const { slug } = useParams({ strict: false }) as { slug: string };
+  return <DeepLinkRedirect deepLink={`deursocial://event/${slug}`} />;
+}
+function EventPostDeepLink() {
+  const { slug, postSlug } = useParams({ strict: false }) as { slug: string; postSlug: string };
+  return <DeepLinkRedirect deepLink={`deursocial://event/${slug}/posts/${postSlug}`} />;
+}
+function EventMomentDeepLink() {
+  const { slug, momentSlug } = useParams({ strict: false }) as { slug: string; momentSlug: string };
+  return <DeepLinkRedirect deepLink={`deursocial://event/${slug}/moments/${momentSlug}`} />;
+}
+function GroupDeepLink() {
+  const { slug } = useParams({ strict: false }) as { slug: string };
+  return <DeepLinkRedirect deepLink={`deursocial://group/${slug}`} />;
+}
+function OrganizerDeepLink() {
+  const { id } = useParams({ strict: false }) as { id: string };
+  return <DeepLinkRedirect deepLink={`deursocial://organizer/${id}`} />;
+}
+function ProfileDeepLink() {
+  const { username } = useParams({ strict: false }) as { username: string };
+  const { passport } = useSearch({ strict: false }) as { passport?: string };
+  const deepLink = `deursocial://profile/${username}${passport ? `?passport=${passport}` : ''}`;
+  return <DeepLinkRedirect deepLink={deepLink} />;
+}
 import AdminDashboard from '@/pages/admin/AdminDashboard';
 import AdminEvents from '@/pages/admin/AdminEvents';
 import AdminCreateEvent from '@/pages/admin/AdminCreateEvent';
@@ -61,18 +95,69 @@ const loginRoute = createRoute({
   },
 });
 
-// Index redirect
+// Index — landing page for public, dashboard redirect for authenticated users
 const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/',
   beforeLoad: () => {
     const { isAuthenticated, user } = useAuthStore.getState();
-    if (!isAuthenticated) {
-      throw redirect({ to: '/login' });
+    if (isAuthenticated) {
+      throw redirect({ to: user?.role === 'admin' ? '/admin' : '/eo' });
     }
-    throw redirect({ to: user?.role === 'admin' ? '/admin' : '/eo' });
   },
-  component: () => null,
+  component: LandingPage,
+});
+
+// ── Public routes ──
+const eventRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/event/$slug',
+  component: EventDeepLink,
+});
+
+const eventPostRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/event/$slug/posts/$postSlug',
+  component: EventPostDeepLink,
+});
+
+const eventMomentRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/event/$slug/moments/$momentSlug',
+  component: EventMomentDeepLink,
+});
+
+const groupRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/group/$slug',
+  component: GroupDeepLink,
+});
+
+const organizerRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/organizer/$id',
+  component: OrganizerDeepLink,
+});
+
+const profileRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/profile/$username',
+  validateSearch: (search: Record<string, unknown>) => ({
+    passport: typeof search.passport === 'string' ? search.passport : undefined,
+  }),
+  component: ProfileDeepLink,
+});
+
+const privacyPolicyRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/privacy-policy',
+  component: PrivacyPolicyPage,
+});
+
+const termsConditionRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/terms-condition',
+  component: TermsConditionPage,
 });
 
 // ── Admin routes ──
@@ -307,6 +392,15 @@ const eoUserProfileRoute = createRoute({
 const routeTree = rootRoute.addChildren([
   indexRoute,
   loginRoute,
+  // Public deeplink + static routes
+  eventRoute,
+  eventPostRoute,
+  eventMomentRoute,
+  groupRoute,
+  organizerRoute,
+  profileRoute,
+  privacyPolicyRoute,
+  termsConditionRoute,
   adminLayoutRoute.addChildren([
     adminDashboardRoute,
     adminEventsRoute,

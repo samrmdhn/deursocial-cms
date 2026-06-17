@@ -1,0 +1,11 @@
+User-agent: *
+Allow: /$
+Disallow: /event
+Disallow: /group
+Disallow: /organizer
+Disallow: /profile
+Disallow: /admin
+Disallow: /eo
+Disallow: /login
+
+Sitemap: https://deursocial.com/sitemap.xml
