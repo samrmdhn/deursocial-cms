@@ -46,6 +46,71 @@ export default function AdminEventDetail() {
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['admin', 'event', eventId] }); toast.success('Updated'); },
   });
 
+  const approveMutation = useMutation({
+    mutationFn: async () => {
+      const draft = event?.draft_data as Record<string, any> | null;
+      if (!draft) {
+        const { error } = await supabase.from('ir_content_details').update({
+          approval_status: 'approved', rejection_reason: null,
+          updated_at: Math.floor(Date.now() / 1000),
+        }).eq('id', Number(eventId));
+        if (error) throw error;
+        return;
+      }
+      const liveUpdate: Record<string, any> = {
+        approval_status: 'approved', draft_data: null, rejection_reason: null,
+        updated_at: Math.floor(Date.now() / 1000),
+      };
+      ['title','description','date_start','date_end','schedule_start','schedule_end','vanues_id','contents_id','instagram_url','website_url','status','image']
+        .forEach(f => { if (f in draft) liveUpdate[f] = draft[f]; });
+      const { error } = await supabase.from('ir_content_details').update(liveUpdate).eq('id', Number(eventId));
+      if (error) throw error;
+      if (draft.checkin_config && event?.slug) {
+        const cfg = draft.checkin_config;
+        await supabase.from('ir_event_qr_config').upsert({
+          event_slug: event.slug,
+          is_active: cfg.is_active ?? false,
+          checkin_mode: cfg.checkin_mode ?? 'once',
+          checkin_method: cfg.checkin_method ?? 'qr',
+          geofence_type: 'radius',
+          geofence_center_lat: cfg.geofence_center_lat ?? null,
+          geofence_center_lng: cfg.geofence_center_lng ?? null,
+          geofence_radius_m: cfg.geofence_radius_m ?? null,
+          geofence_polygon_json: [],
+          passport_image_url: cfg.passport_image_url ?? null,
+          checkin_badge_id: cfg.checkin_badge_id ?? null,
+          updated_at: Math.floor(Date.now() / 1000),
+        }, { onConflict: 'event_slug' });
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'event', eventId] });
+      queryClient.invalidateQueries({ queryKey: ['admin', 'events'] });
+      toast.success('Event approved');
+    },
+    onError: () => toast.error('Approve failed'),
+  });
+
+  const rejectMutation = useMutation({
+    mutationFn: async (reason: string) => {
+      const update: Record<string, any> = {
+        rejection_reason: reason, draft_data: null,
+        updated_at: Math.floor(Date.now() / 1000),
+      };
+      if (!(event?.draft_data)) update.approval_status = 'rejected';
+      const { error } = await supabase.from('ir_content_details').update(update).eq('id', Number(eventId));
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'event', eventId] });
+      queryClient.invalidateQueries({ queryKey: ['admin', 'events'] });
+      toast.success('Changes rejected');
+      setShowDenyModal(false);
+      setDenyReason('');
+    },
+    onError: () => toast.error('Reject failed'),
+  });
+
   const formatDate = (epoch: number | null) => {
     if (!epoch) return '—';
     return new Date(epoch * 1000).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' });
@@ -93,24 +158,92 @@ export default function AdminEventDetail() {
       </div>
 
       {/* Pending review banner */}
-      {event.approval_status === 'pending' && (
-        <div style={{ background: '#1a1200', border: '1px solid #2a1e00', borderRadius: 6, padding: '16px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
-          <div>
-            <div style={{ fontSize: 13, fontWeight: 600, color: '#c08020' }}>Pending Review</div>
-            <div style={{ fontSize: 11, color: '#8a6010', marginTop: 3 }}>Submitted by EO — approve to publish or deny with feedback.</div>
+      {(event.approval_status === 'pending' || !!event.draft_data) && (() => {
+        const draft = event.draft_data as Record<string, any> | null;
+        return (
+          <div style={{ background: '#1a1200', border: '1px solid #2a1e00', borderRadius: 6, padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: '#c08020' }}>Pending Review</div>
+                <div style={{ fontSize: 11, color: '#8a6010', marginTop: 3 }}>
+                  {draft ? 'EO submitted changes — review diff below and approve to go live.' : 'New event submitted by EO — approve to publish.'}
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+                <button onClick={() => setShowDenyModal(true)}
+                  style={{ padding: '7px 16px', background: 'none', border: '1px solid #4a1a1a', borderRadius: 5, color: '#cc4444', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>
+                  Deny
+                </button>
+                <button onClick={() => approveMutation.mutate()} disabled={approveMutation.isPending}
+                  style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 16px', background: '#0a2a0a', border: '1px solid #1a4a1a', borderRadius: 5, color: approveMutation.isPending ? '#444' : '#22c55e', fontSize: 11, fontWeight: 600, cursor: approveMutation.isPending ? 'default' : 'pointer' }}>
+                  <CheckCircle size={12} /> {approveMutation.isPending ? 'Approving…' : 'Approve'}
+                </button>
+              </div>
+            </div>
+            {draft && (
+              <div style={{ background: 'rgba(0,0,0,0.3)', borderRadius: 4, overflow: 'hidden' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                      <th style={{ padding: '7px 12px', textAlign: 'left', color: '#555', fontWeight: 500, width: '18%' }}>Field</th>
+                      <th style={{ padding: '7px 12px', textAlign: 'left', color: '#555', fontWeight: 500, width: '41%' }}>Live</th>
+                      <th style={{ padding: '7px 12px', textAlign: 'left', color: '#8a6010', fontWeight: 500, width: '41%' }}>Proposed</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {draft.title !== event.title && (
+                      <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
+                        <td style={{ padding: '6px 12px', color: '#666' }}>Title</td>
+                        <td style={{ padding: '6px 12px', color: '#555', wordBreak: 'break-word' }}>{event.title}</td>
+                        <td style={{ padding: '6px 12px', color: '#c08020', wordBreak: 'break-word' }}>{draft.title}</td>
+                      </tr>
+                    )}
+                    {draft.description !== event.description && (
+                      <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
+                        <td style={{ padding: '6px 12px', color: '#666' }}>Description</td>
+                        <td style={{ padding: '6px 12px', color: '#555' }}>{String(event.description ?? '').slice(0, 60)}{(event.description?.length ?? 0) > 60 ? '…' : ''}</td>
+                        <td style={{ padding: '6px 12px', color: '#c08020' }}>{String(draft.description ?? '').slice(0, 60)}{(String(draft.description ?? '').length) > 60 ? '…' : ''}</td>
+                      </tr>
+                    )}
+                    {draft.date_start !== event.date_start && (
+                      <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
+                        <td style={{ padding: '6px 12px', color: '#666' }}>Date</td>
+                        <td style={{ padding: '6px 12px', color: '#555' }}>{formatDate(event.date_start)}</td>
+                        <td style={{ padding: '6px 12px', color: '#c08020' }}>{formatDate(draft.date_start)}</td>
+                      </tr>
+                    )}
+                    {draft.status !== event.status && (
+                      <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
+                        <td style={{ padding: '6px 12px', color: '#666' }}>Status</td>
+                        <td style={{ padding: '6px 12px', color: '#555' }}>{STATUS[event.status] ?? '—'}</td>
+                        <td style={{ padding: '6px 12px', color: '#c08020' }}>{STATUS[draft.status] ?? '—'}</td>
+                      </tr>
+                    )}
+                    {draft.image !== event.image && (
+                      <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
+                        <td style={{ padding: '6px 12px', color: '#666' }}>Image</td>
+                        <td style={{ padding: '6px 12px', color: '#555' }}>Current image</td>
+                        <td style={{ padding: '6px 12px', color: '#c08020' }}>New image uploaded</td>
+                      </tr>
+                    )}
+                    {draft.checkin_config && (
+                      <tr>
+                        <td style={{ padding: '6px 12px', color: '#666' }}>Check-in</td>
+                        <td style={{ padding: '6px 12px', color: '#555' }}>—</td>
+                        <td style={{ padding: '6px 12px', color: '#c08020' }}>
+                          {draft.checkin_config.is_active ? 'Active' : 'Inactive'}
+                          {draft.checkin_config.checkin_badge_id ? ' · badge set' : ''}
+                          {draft.checkin_config.geofence_radius_m ? ` · ${draft.checkin_config.geofence_radius_m}m radius` : ''}
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
-          <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
-            <button onClick={() => setShowDenyModal(true)}
-              style={{ padding: '7px 16px', background: 'none', border: '1px solid #4a1a1a', borderRadius: 5, color: '#cc4444', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>
-              Deny
-            </button>
-            <button onClick={() => toggleMutation.mutate({ field: 'approval_status', value: 'approved', reason: undefined })}
-              style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 16px', background: '#0a2a0a', border: '1px solid #1a4a1a', borderRadius: 5, color: '#22c55e', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>
-              <CheckCircle size={12} /> Approve
-            </button>
-          </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Rejected banner */}
       {event.approval_status === 'rejected' && (
@@ -187,10 +320,10 @@ export default function AdminEventDetail() {
                   style={{ flex: 1, padding: '10px', background: 'none', border: '1px solid #1e1e1e', borderRadius: 5, color: '#888', fontSize: 12, fontWeight: 500, cursor: 'pointer' }}>
                   Cancel
                 </button>
-                <button disabled={!denyReason.trim()}
-                  onClick={() => { toggleMutation.mutate({ field: 'approval_status', value: 'rejected', reason: denyReason }); setShowDenyModal(false); }}
+                <button disabled={!denyReason.trim() || rejectMutation.isPending}
+                  onClick={() => rejectMutation.mutate(denyReason)}
                   style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '10px', background: denyReason.trim() ? '#1a0505' : '#0a0a0a', border: `1px solid ${denyReason.trim() ? '#4a1515' : '#1a1a1a'}`, borderRadius: 5, color: denyReason.trim() ? '#cc4444' : '#333', fontSize: 12, fontWeight: 600, cursor: denyReason.trim() ? 'pointer' : 'default' }}>
-                  <XCircle size={12} /> Confirm Deny
+                  <XCircle size={12} /> {rejectMutation.isPending ? 'Rejecting…' : 'Confirm Deny'}
                 </button>
               </div>
             </div>

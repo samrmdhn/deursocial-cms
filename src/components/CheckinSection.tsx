@@ -1,25 +1,24 @@
 import { useState, useEffect, lazy, Suspense } from 'react';
 import { supabase } from '@/lib/supabase';
 import toast from 'react-hot-toast';
-import { Download, QrCode, Upload, X, MapPin, CheckCircle2, Clock, RefreshCw, Smartphone } from 'lucide-react';
+import { Award, Download, Plus, QrCode, Upload, X, MapPin, CheckCircle2, RefreshCw, Smartphone } from 'lucide-react';
 import type { GeofenceConfig } from './GeofenceMap';
 
 const GeofenceMap = lazy(() => import('./GeofenceMap'));
 
-type StripPattern = 'none' | 'stripes' | 'dots' | 'grid';
-type FrameStyle = 'none' | 'thin' | 'thick' | 'glow';
-type StickerTheme = 'none' | 'energic' | 'confetti' | 'stars' | 'hearts';
-
 interface CheckinConfig {
   is_active: boolean;
-  checkin_mode: 'once' | 'per_day';
+  checkin_mode: 'once';
   checkin_method: 'qr' | 'button';
   geofence: GeofenceConfig;
   passport_image_url: string | null;
-  accent_color: string | null;
-  strip_pattern: StripPattern;
-  frame_style: FrameStyle;
-  sticker_theme: StickerTheme;
+}
+
+interface BadgeSummary {
+  id: number;
+  slug: string;
+  name: string;
+  image_url: string | null;
 }
 
 interface Props {
@@ -27,6 +26,12 @@ interface Props {
   apiBase: string;
   token: string;
   disabled?: boolean;
+  /** EO mode: saves checkin config to draft_data instead of directly to ir_event_qr_config */
+  eoMode?: boolean;
+  /** Required when eoMode=true — the ir_content_details.id for the event */
+  eventContentId?: number;
+  /** Existing draft_data.checkin_config to overlay on loaded live config */
+  draftCheckinConfig?: Record<string, any> | null;
 }
 
 const DEFAULT_GEOFENCE: GeofenceConfig = {
@@ -131,7 +136,7 @@ function Toggle({ value, onChange }: { value: boolean; onChange: () => void }) {
   );
 }
 
-export default function CheckinSection({ eventSlug, apiBase, token, disabled }: Props) {
+export default function CheckinSection({ eventSlug, apiBase, token, disabled, eoMode, eventContentId, draftCheckinConfig }: Props) {
   if (disabled) {
     return (
       <div style={{ ...S.section, opacity: 0.5, pointerEvents: 'none' }}>
@@ -156,10 +161,6 @@ export default function CheckinSection({ eventSlug, apiBase, token, disabled }: 
     checkin_method: 'qr',
     geofence: DEFAULT_GEOFENCE,
     passport_image_url: null,
-    accent_color: null,
-    strip_pattern: 'none',
-    frame_style: 'none',
-    sticker_theme: 'none',
   });
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const [stampFile, setStampFile] = useState<File | null>(null);
@@ -167,6 +168,16 @@ export default function CheckinSection({ eventSlug, apiBase, token, disabled }: 
   const [saving, setSaving] = useState(false);
   const [loadingQR, setLoadingQR] = useState(false);
   const [loaded, setLoaded] = useState(false);
+
+  // Badge state
+  const [checkinBadgeId, setCheckinBadgeId] = useState<number | null>(null);
+  const [currentBadge, setCurrentBadge] = useState<BadgeSummary | null>(null);
+  const [badgeMode, setBadgeMode] = useState<'none' | 'create'>('none');
+  const [badgeCreateName, setBadgeCreateName] = useState('');
+  const [badgeCreateDesc, setBadgeCreateDesc] = useState('');
+  const [badgeCreateFile, setBadgeCreateFile] = useState<File | null>(null);
+  const [badgeCreatePreview, setBadgeCreatePreview] = useState<string | null>(null);
+  const [creatingBadge, setCreatingBadge] = useState(false);
 
   useEffect(() => {
     if (!eventSlug) return;
@@ -176,29 +187,67 @@ export default function CheckinSection({ eventSlug, apiBase, token, disabled }: 
       .eq('event_slug', eventSlug)
       .single()
       .then(({ data }) => {
+        let cfg: CheckinConfig = {
+          is_active: false,
+          checkin_mode: 'once',
+          checkin_method: 'qr',
+          geofence: DEFAULT_GEOFENCE,
+          passport_image_url: null,
+        };
+        let badgeId: number | null = null;
+
         if (data) {
-          setConfig({
+          cfg = {
             is_active: data.is_active ?? false,
-            checkin_mode: data.checkin_mode ?? 'once',
+            checkin_mode: 'once',
             checkin_method: data.checkin_method ?? 'qr',
             geofence: {
-              mode: data.geofence_type ?? 'radius',
+              mode: 'radius',
               center_lat: data.geofence_center_lat ?? -6.2088,
               center_lng: data.geofence_center_lng ?? 106.8456,
               radius_m: data.geofence_radius_m ?? 200,
-              polygon: data.geofence_polygon_json ?? [],
+              polygon: [],
             },
             passport_image_url: data.passport_image_url ?? null,
-            accent_color: data.accent_color ?? null,
-            strip_pattern: data.strip_pattern ?? 'none',
-            frame_style: data.frame_style ?? 'none',
-            sticker_theme: data.sticker_theme ?? 'none',
-          });
+          };
+          badgeId = data.checkin_badge_id ?? null;
           if (data.passport_image_url) setStampPreview(data.passport_image_url);
           if (data.is_active) doFetchQR();
         }
+
+        // EO mode: overlay pending draft config on top of live config
+        if (eoMode && draftCheckinConfig) {
+          cfg = {
+            is_active: draftCheckinConfig.is_active ?? cfg.is_active,
+            checkin_mode: 'once',
+            checkin_method: draftCheckinConfig.checkin_method ?? cfg.checkin_method,
+            geofence: {
+              mode: 'radius',
+              center_lat: draftCheckinConfig.geofence_center_lat ?? cfg.geofence.center_lat,
+              center_lng: draftCheckinConfig.geofence_center_lng ?? cfg.geofence.center_lng,
+              radius_m: draftCheckinConfig.geofence_radius_m ?? cfg.geofence.radius_m,
+              polygon: [],
+            },
+            passport_image_url: draftCheckinConfig.passport_image_url ?? cfg.passport_image_url,
+          };
+          badgeId = draftCheckinConfig.checkin_badge_id ?? null;
+          if (draftCheckinConfig.passport_image_url) setStampPreview(draftCheckinConfig.passport_image_url);
+        }
+
+        setConfig(cfg);
+
+        if (badgeId) {
+          setCheckinBadgeId(badgeId);
+          supabase
+            .from('ir_badges')
+            .select('id, slug, name, image_url')
+            .eq('id', badgeId)
+            .single()
+            .then(({ data: b }) => { if (b) setCurrentBadge(b); });
+        }
         setLoaded(true);
       });
+
   }, [eventSlug]);
 
   const doFetchQR = async () => {
@@ -228,6 +277,112 @@ export default function CheckinSection({ eventSlug, apiBase, token, disabled }: 
     setStampPreview(URL.createObjectURL(file));
   };
 
+  const handleBadgeFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setBadgeCreateFile(file);
+    setBadgeCreatePreview(URL.createObjectURL(file));
+  };
+
+  const handleCreateBadge = async () => {
+    if (!badgeCreateName.trim()) { toast.error('Badge name is required'); return; }
+    setCreatingBadge(true);
+    try {
+      let imageUrl: string | null = null;
+      if (badgeCreateFile) {
+        const path = `badges/${Date.now()}-${badgeCreateFile.name}`;
+        const { error: upErr } = await supabase.storage.from('post-images').upload(path, badgeCreateFile, { upsert: false });
+        if (upErr) throw upErr;
+        const { data: urlData } = supabase.storage.from('post-images').getPublicUrl(path);
+        imageUrl = urlData.publicUrl;
+      }
+      const slug = badgeCreateName.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/(^_|_$)/g, '');
+      const { data: newBadge, error } = await supabase.from('ir_badges').insert({
+        slug,
+        name: badgeCreateName.trim(),
+        description: badgeCreateDesc.trim() || null,
+        image_url: imageUrl,
+        is_active: true,
+        created_at: Math.floor(Date.now() / 1000),
+      }).select('id, slug, name, image_url').single();
+      if (error) {
+        if (error.code === '23505') toast.error('A badge with this name already exists');
+        else throw error;
+        return;
+      }
+      setCheckinBadgeId(newBadge.id);
+      setCurrentBadge(newBadge);
+      setBadgeMode('none');
+      setBadgeCreateName(''); setBadgeCreateDesc('');
+      setBadgeCreateFile(null); setBadgeCreatePreview(null);
+      // Immediately persist the badge link so check-in can award it
+      if (eoMode && eventContentId) {
+        // EO mode: save to draft_data.checkin_config so it goes through approval
+        const { data: currentRow } = await supabase.from('ir_content_details')
+          .select('draft_data').eq('id', eventContentId).single();
+        const existing = currentRow?.draft_data ?? {};
+        const existingCfg = existing.checkin_config ?? {};
+        await supabase.from('ir_content_details').update({
+          draft_data: {
+            ...existing,
+            checkin_config: {
+              is_active: config.is_active, checkin_mode: 'once',
+              checkin_method: config.checkin_method,
+              geofence_center_lat: config.geofence.center_lat,
+              geofence_center_lng: config.geofence.center_lng,
+              geofence_radius_m: config.geofence.radius_m,
+              passport_image_url: config.passport_image_url,
+              ...existingCfg,
+              checkin_badge_id: newBadge.id,
+            },
+          },
+          updated_at: Math.floor(Date.now() / 1000),
+        }).eq('id', eventContentId);
+        toast.success('Badge created — submit for review to go live');
+      } else {
+        // Admin mode: UPSERT directly (handles missing row too)
+        await supabase.from('ir_event_qr_config').upsert({
+          event_slug: eventSlug,
+          is_active: config.is_active, checkin_mode: 'once',
+          checkin_method: config.checkin_method,
+          geofence_type: 'radius',
+          geofence_center_lat: config.geofence.center_lat,
+          geofence_center_lng: config.geofence.center_lng,
+          geofence_radius_m: config.geofence.radius_m,
+          geofence_polygon_json: [],
+          passport_image_url: config.passport_image_url,
+          checkin_badge_id: newBadge.id,
+          updated_at: Math.floor(Date.now() / 1000),
+        }, { onConflict: 'event_slug' });
+        toast.success('Badge created and linked to event');
+      }
+    } catch (err: any) {
+      toast.error(err.message ?? 'Failed to create badge');
+    } finally {
+      setCreatingBadge(false);
+    }
+  };
+
+  const handleRemoveBadge = async () => {
+    setCheckinBadgeId(null);
+    setCurrentBadge(null);
+    setBadgeMode('none');
+    if (eoMode && eventContentId) {
+      const { data: currentRow } = await supabase.from('ir_content_details')
+        .select('draft_data').eq('id', eventContentId).single();
+      const existing = currentRow?.draft_data ?? {};
+      const existingCfg = existing.checkin_config ?? {};
+      await supabase.from('ir_content_details').update({
+        draft_data: { ...existing, checkin_config: { ...existingCfg, checkin_badge_id: null } },
+        updated_at: Math.floor(Date.now() / 1000),
+      }).eq('id', eventContentId);
+    } else {
+      await supabase.from('ir_event_qr_config')
+        .update({ checkin_badge_id: null })
+        .eq('event_slug', eventSlug);
+    }
+  };
+
   const handleSave = async () => {
     setSaving(true);
     try {
@@ -242,27 +397,52 @@ export default function CheckinSection({ eventSlug, apiBase, token, disabled }: 
         const { data: urlData } = supabase.storage.from('post-images').getPublicUrl(path);
         stampUrl = urlData.publicUrl;
       }
-      const { error } = await supabase.from('ir_event_qr_config').upsert({
-        event_slug: eventSlug,
-        is_active: config.is_active,
-        checkin_mode: config.checkin_mode,
-        checkin_method: config.checkin_method,
-        geofence_type: config.geofence.mode,
-        geofence_center_lat: config.geofence.center_lat,
-        geofence_center_lng: config.geofence.center_lng,
-        geofence_radius_m: config.geofence.radius_m,
-        geofence_polygon_json: config.geofence.polygon,
-        passport_image_url: stampUrl,
-        accent_color: config.accent_color || null,
-        strip_pattern: config.strip_pattern === 'none' ? null : config.strip_pattern,
-        frame_style: config.frame_style === 'none' ? null : config.frame_style,
-        sticker_theme: config.sticker_theme === 'none' ? null : config.sticker_theme,
-        updated_at: Math.floor(Date.now() / 1000),
-      }, { onConflict: 'event_slug' });
-      if (error) throw error;
-      setConfig((c) => ({ ...c, passport_image_url: stampUrl }));
-      toast.success('Check-in config saved');
-      if (config.is_active && !qrDataUrl) doFetchQR();
+
+      if (eoMode && eventContentId) {
+        // EO mode: write to draft_data.checkin_config (requires admin approval)
+        const { data: currentRow } = await supabase.from('ir_content_details')
+          .select('draft_data').eq('id', eventContentId).single();
+        const existing = currentRow?.draft_data ?? {};
+        const { error } = await supabase.from('ir_content_details').update({
+          draft_data: {
+            ...existing,
+            checkin_config: {
+              is_active: config.is_active,
+              checkin_mode: 'once',
+              checkin_method: config.checkin_method,
+              geofence_center_lat: config.geofence.center_lat,
+              geofence_center_lng: config.geofence.center_lng,
+              geofence_radius_m: config.geofence.radius_m,
+              passport_image_url: stampUrl,
+              checkin_badge_id: checkinBadgeId ?? null,
+            },
+          },
+          updated_at: Math.floor(Date.now() / 1000),
+        }).eq('id', eventContentId);
+        if (error) throw error;
+        setConfig((c) => ({ ...c, passport_image_url: stampUrl }));
+        toast.success('Check-in config submitted for review');
+      } else {
+        // Admin mode: save directly to ir_event_qr_config
+        const { error } = await supabase.from('ir_event_qr_config').upsert({
+          event_slug: eventSlug,
+          is_active: config.is_active,
+          checkin_mode: 'once',
+          checkin_method: config.checkin_method,
+          geofence_type: 'radius',
+          geofence_center_lat: config.geofence.center_lat,
+          geofence_center_lng: config.geofence.center_lng,
+          geofence_radius_m: config.geofence.radius_m,
+          geofence_polygon_json: [],
+          passport_image_url: stampUrl,
+          checkin_badge_id: checkinBadgeId ?? null,
+          updated_at: Math.floor(Date.now() / 1000),
+        }, { onConflict: 'event_slug' });
+        if (error) throw error;
+        setConfig((c) => ({ ...c, passport_image_url: stampUrl }));
+        toast.success('Check-in config saved');
+        if (config.is_active && !qrDataUrl) doFetchQR();
+      }
     } catch (err: any) {
       toast.error(err.message ?? 'Save failed');
     } finally {
@@ -309,25 +489,13 @@ export default function CheckinSection({ eventSlug, apiBase, token, disabled }: 
       </div>
 
       <div style={S.body}>
-        {/* Check-in Mode */}
-        <div>
-          <span style={S.label}>Check-in Mode</span>
-          <div style={{ display: 'flex', background: '#080808', border: '1px solid #1a1a1a', borderRadius: 7, padding: 3, gap: 2 }}>
-            {(['once', 'per_day'] as const).map((m) => (
-              <button
-                key={m}
-                type="button"
-                onClick={() => setConfig((c) => ({ ...c, checkin_mode: m }))}
-                style={S.segControl(config.checkin_mode === m)}
-              >
-                <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
-                  {m === 'once' ? <CheckCircle2 size={11} /> : <Clock size={11} />}
-                  {m === 'once' ? 'Once per event' : 'Once per day'}
-                </span>
-              </button>
-            ))}
+        {/* EO pending review banner */}
+        {eoMode && draftCheckinConfig && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', background: 'rgba(245,158,11,0.07)', border: '1px solid rgba(245,158,11,0.2)', borderRadius: 7 }}>
+            <span style={{ fontSize: 10, fontWeight: 600, color: '#f59e0b', letterSpacing: '0.5px' }}>⏳ PENDING REVIEW</span>
+            <span style={{ fontSize: 10, color: '#78716c' }}>These check-in changes await admin approval</span>
           </div>
-        </div>
+        )}
 
         {/* Check-in Method */}
         <div>
@@ -356,7 +524,7 @@ export default function CheckinSection({ eventSlug, apiBase, token, disabled }: 
           </p>
         </div>
 
-        {/* Geofence */}
+        {/* Geofence — radius only */}
         <div>
           <span style={S.label}>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
@@ -371,6 +539,7 @@ export default function CheckinSection({ eventSlug, apiBase, token, disabled }: 
             <GeofenceMap
               value={config.geofence}
               onChange={(g) => setConfig((c) => ({ ...c, geofence: g }))}
+              polygonEnabled={false}
             />
           </Suspense>
           <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
@@ -382,16 +551,14 @@ export default function CheckinSection({ eventSlug, apiBase, token, disabled }: 
               <span style={{ fontSize: 9, color: '#444', display: 'block', marginBottom: 2 }}>LNG</span>
               <span style={{ fontSize: 11, color: '#888', fontFamily: 'monospace' }}>{config.geofence.center_lng.toFixed(6)}</span>
             </div>
-            {config.geofence.mode === 'radius' && (
-              <div style={{ flex: 1, padding: '8px 12px', background: '#080808', border: '1px solid #141414', borderRadius: 6 }}>
-                <span style={{ fontSize: 9, color: '#444', display: 'block', marginBottom: 2 }}>RADIUS</span>
-                <span style={{ fontSize: 11, color: '#888', fontFamily: 'monospace' }}>{config.geofence.radius_m}m</span>
-              </div>
-            )}
+            <div style={{ flex: 1, padding: '8px 12px', background: '#080808', border: '1px solid #141414', borderRadius: 6 }}>
+              <span style={{ fontSize: 9, color: '#444', display: 'block', marginBottom: 2 }}>RADIUS</span>
+              <span style={{ fontSize: 11, color: '#888', fontFamily: 'monospace' }}>{config.geofence.radius_m}m</span>
+            </div>
           </div>
         </div>
 
-        {/* Stamp / Passport Image */}
+        {/* Passport Stamp Image */}
         <div>
           <span style={S.label}>Passport Stamp Image</span>
           {stampPreview ? (
@@ -421,6 +588,86 @@ export default function CheckinSection({ eventSlug, apiBase, token, disabled }: 
               </div>
               <input type="file" accept="image/*" style={{ display: 'none' }} onChange={handleStampChange} />
             </label>
+          )}
+        </div>
+
+        {/* Check-in Reward Badge */}
+        <div style={{ borderTop: '1px solid #111', paddingTop: 20 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+            <span style={{ ...S.label, marginBottom: 0 }}>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                <Award size={10} /> Check-in Reward Badge
+              </span>
+            </span>
+            <span style={{ fontSize: 9, color: '#444', letterSpacing: '0.5px' }}>OPTIONAL</span>
+          </div>
+
+          {currentBadge ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', background: '#080808', border: '1px solid #1a2a1a', borderRadius: 8 }}>
+              <div style={{ width: 40, height: 40, borderRadius: 8, overflow: 'hidden', background: '#111', border: '1px solid #1e1e1e', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                {currentBadge.image_url
+                  ? <img src={currentBadge.image_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                  : <Award size={18} style={{ color: '#333' }} />}
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: '#d8d8d8' }}>{currentBadge.name}</div>
+                <div style={{ fontSize: 10, color: '#444', marginTop: 1 }}>Awarded on successful check-in</div>
+              </div>
+              <button
+                type="button"
+                onClick={handleRemoveBadge}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 10px', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 5, color: '#f87171', fontSize: 10, cursor: 'pointer', flexShrink: 0 }}
+              >
+                <X size={10} /> Remove
+              </button>
+            </div>
+          ) : badgeMode === 'create' ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '14px', background: '#080808', border: '1px solid #1a1a1a', borderRadius: 8 }}>
+              <label style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', width: '100%', height: 90, border: '1px dashed #222', borderRadius: 6, cursor: 'pointer', overflow: 'hidden', background: '#060606' }}>
+                {badgeCreatePreview
+                  ? <img src={badgeCreatePreview} alt="" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                  : <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, color: '#333' }}>
+                      <Upload size={16} />
+                      <span style={{ fontSize: 10 }}>Badge image</span>
+                    </div>}
+                <input type="file" accept="image/*" style={{ display: 'none' }} onChange={handleBadgeFileChange} />
+              </label>
+              <input
+                style={{ width: '100%', padding: '8px 12px', background: '#0d0d0d', border: '1px solid #1e1e1e', borderRadius: 5, color: '#e0e0e0', fontSize: 12, outline: 'none', boxSizing: 'border-box' as const }}
+                placeholder="Badge name *"
+                value={badgeCreateName}
+                onChange={(e) => setBadgeCreateName(e.target.value)}
+              />
+              <input
+                style={{ width: '100%', padding: '8px 12px', background: '#0d0d0d', border: '1px solid #1e1e1e', borderRadius: 5, color: '#e0e0e0', fontSize: 12, outline: 'none', boxSizing: 'border-box' as const }}
+                placeholder="Description (optional)"
+                value={badgeCreateDesc}
+                onChange={(e) => setBadgeCreateDesc(e.target.value)}
+              />
+              <div style={{ display: 'flex', gap: 6 }}>
+                <button
+                  type="button"
+                  onClick={handleCreateBadge}
+                  disabled={creatingBadge || !badgeCreateName.trim()}
+                  style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 14px', borderRadius: 5, border: 'none', cursor: creatingBadge ? 'default' : 'pointer', background: '#1a2a1a', color: '#22c55e', fontSize: 11, fontWeight: 600 }}
+                >
+                  <Plus size={12} /> {creatingBadge ? 'Creating…' : 'Create Badge'}
+                </button>
+                <button type="button" onClick={() => { setBadgeMode('none'); setBadgeCreateName(''); setBadgeCreateDesc(''); setBadgeCreateFile(null); setBadgeCreatePreview(null); }} style={{ padding: '7px 14px', borderRadius: 5, border: '1px solid #222', cursor: 'pointer', background: 'none', color: '#555', fontSize: 11 }}>
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', gap: 6 }}>
+              <button
+                type="button"
+                onClick={() => setBadgeMode('create')}
+                style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 14px', borderRadius: 5, border: '1px solid #1e1e1e', cursor: 'pointer', background: 'transparent', color: '#888', fontSize: 11 }}
+              >
+                <Plus size={11} /> Create New
+              </button>
+            </div>
           )}
         </div>
 
@@ -481,97 +728,13 @@ export default function CheckinSection({ eventSlug, apiBase, token, disabled }: 
           </div>
         )}
 
-        {/* Passport Cosmetics */}
-        <div style={{ borderTop: '1px solid #111', paddingTop: 20 }}>
-          <span style={{ ...S.label, display: 'block', marginBottom: 14 }}>Passport Card Cosmetics</span>
-
-          {/* Accent colour */}
-          <div style={{ marginBottom: 16 }}>
-            <span style={{ ...S.label, marginBottom: 6, display: 'block', color: '#444' }}>Accent Color</span>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <div style={{ position: 'relative', width: 36, height: 36, borderRadius: 8, overflow: 'hidden', border: '1px solid #1e1e1e', flexShrink: 0, cursor: 'pointer' }}>
-                <input
-                  type="color"
-                  value={config.accent_color ?? '#ffffff'}
-                  onChange={(e) => setConfig((c) => ({ ...c, accent_color: e.target.value }))}
-                  style={{ position: 'absolute', inset: -4, width: 'calc(100% + 8px)', height: 'calc(100% + 8px)', border: 'none', cursor: 'pointer', padding: 0 }}
-                />
-              </div>
-              {config.accent_color ? (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ fontSize: 11, color: '#888', fontFamily: 'monospace' }}>{config.accent_color}</span>
-                  <button
-                    type="button"
-                    onClick={() => setConfig((c) => ({ ...c, accent_color: null }))}
-                    style={{ fontSize: 10, color: '#555', background: 'none', border: '1px solid #1e1e1e', borderRadius: 4, padding: '2px 8px', cursor: 'pointer' }}
-                  >
-                    Clear
-                  </button>
-                </div>
-              ) : (
-                <span style={{ fontSize: 11, color: '#333' }}>No accent — default warm white card</span>
-              )}
-            </div>
-          </div>
-
-          {/* Strip pattern */}
-          <div style={{ marginBottom: 16 }}>
-            <span style={{ ...S.label, marginBottom: 6, display: 'block', color: '#444' }}>Strip Pattern</span>
-            <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' as const }}>
-              {(['none', 'stripes', 'dots', 'grid'] as StripPattern[]).map((p) => (
-                <button
-                  key={p}
-                  type="button"
-                  onClick={() => setConfig((c) => ({ ...c, strip_pattern: p }))}
-                  style={{ padding: '5px 12px', borderRadius: 4, border: config.strip_pattern === p ? '1px solid #444' : '1px solid #1a1a1a', background: config.strip_pattern === p ? '#161616' : 'transparent', color: config.strip_pattern === p ? '#d0d0d0' : '#444', fontSize: 11, cursor: 'pointer', textTransform: 'capitalize' as const }}
-                >
-                  {p}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Frame style */}
-          <div style={{ marginBottom: 16 }}>
-            <span style={{ ...S.label, marginBottom: 6, display: 'block', color: '#444' }}>Frame Style</span>
-            <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' as const }}>
-              {(['none', 'thin', 'thick', 'glow'] as FrameStyle[]).map((f) => (
-                <button
-                  key={f}
-                  type="button"
-                  onClick={() => setConfig((c) => ({ ...c, frame_style: f }))}
-                  style={{ padding: '5px 12px', borderRadius: 4, border: config.frame_style === f ? '1px solid #444' : '1px solid #1a1a1a', background: config.frame_style === f ? '#161616' : 'transparent', color: config.frame_style === f ? '#d0d0d0' : '#444', fontSize: 11, cursor: 'pointer', textTransform: 'capitalize' as const }}
-                >
-                  {f}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Sticker theme */}
-          <div>
-            <span style={{ ...S.label, marginBottom: 6, display: 'block', color: '#444' }}>Sticker Theme</span>
-            <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' as const }}>
-              {(['none', 'energic', 'confetti', 'stars', 'hearts'] as StickerTheme[]).map((t) => (
-                <button
-                  key={t}
-                  type="button"
-                  onClick={() => setConfig((c) => ({ ...c, sticker_theme: t }))}
-                  style={{ padding: '5px 12px', borderRadius: 4, border: config.sticker_theme === t ? '1px solid #444' : '1px solid #1a1a1a', background: config.sticker_theme === t ? '#161616' : 'transparent', color: config.sticker_theme === t ? '#d0d0d0' : '#444', fontSize: 11, cursor: 'pointer', textTransform: 'capitalize' as const }}
-                >
-                  {t}
-                </button>
-              ))}
-            </div>
-            <p style={{ fontSize: 10, color: '#333', marginTop: 6 }}>Animated particles overlay on the passport photo.</p>
-          </div>
-        </div>
-
         {/* Save */}
         <button type="button" onClick={handleSave} disabled={saving} style={S.saveBtn(saving)}>
           {saving
             ? <><div style={{ width: 13, height: 13, border: '2px solid #222', borderTopColor: '#555', borderRadius: '50%' }} className="ds-spin" /> Saving…</>
-            : <><CheckCircle2 size={12} /> Save Check-in Config</>}
+            : eoMode
+              ? <><CheckCircle2 size={12} /> Save Check-in to Draft</>
+              : <><CheckCircle2 size={12} /> Save Check-in Config</>}
         </button>
       </div>
     </div>

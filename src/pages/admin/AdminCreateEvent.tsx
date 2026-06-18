@@ -6,7 +6,6 @@ import { uploadImageToBucket } from '@/lib/upload';
 import toast from 'react-hot-toast';
 import { ArrowLeft, Send } from 'lucide-react';
 import EventPreviewCard from '@/components/EventPreviewCard';
-import EventDetailPreview from '@/components/EventDetailPreview';
 import EventForm, { type EventFormData } from '@/components/EventForm';
 import CheckinSection from '@/components/CheckinSection';
 
@@ -21,7 +20,6 @@ export default function AdminCreateEvent() {
   });
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
-  const [previewTab, setPreviewTab] = useState<'card' | 'detail'>('card');
 
   const { data: venues } = useQuery({ queryKey: ['venues-select'], queryFn: async () => { const { data } = await supabase.from('ir_vanues').select('id, title').order('title'); return data || []; } });
   const { data: eos } = useQuery({ queryKey: ['eos-select'], queryFn: async () => { const { data } = await supabase.from('ir_event_organizers').select('id, name').order('name'); return data || []; } });
@@ -104,19 +102,10 @@ export default function AdminCreateEvent() {
       </div>
 
       <div style={{ position: 'sticky', top: 32 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+        <div style={{ marginBottom: 14 }}>
           <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: '1px', textTransform: 'uppercase', color: '#555' }}>Live Preview</span>
-          <div style={{ display: 'flex', gap: 1, background: '#080808', border: '1px solid #1a1a1a', borderRadius: 4, padding: 2 }}>
-            {(['card', 'detail'] as const).map((t) => (
-              <button key={t} onClick={() => setPreviewTab(t)} style={{ padding: '4px 12px', borderRadius: 3, border: 'none', cursor: 'pointer', background: previewTab === t ? '#161616' : 'transparent', color: previewTab === t ? '#d0d0d0' : '#555', fontSize: 10, fontWeight: 500 }}>
-                {t === 'card' ? 'Card' : 'Detail'}
-              </button>
-            ))}
-          </div>
         </div>
-        {previewTab === 'card'
-          ? <EventPreviewCard form={{ ...form, status: form.status }} imagePreview={imagePreview} venues={venues} />
-          : <EventDetailPreview form={form} imagePreview={imagePreview} venues={venues} eos={eos} />}
+        <EventPreviewCard form={{ ...form, status: form.status }} imagePreview={imagePreview} venues={venues} />
       </div>
     </div>
   );

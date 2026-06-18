@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/stores/authStore';
 import toast from 'react-hot-toast';
-import { ArrowLeft, Images, Save, Trash2, Upload, X } from 'lucide-react';
+import { AlertCircle, ArrowLeft, Clock, Images, Save, Trash2, Upload, X } from 'lucide-react';
 import { uploadImageToBucket } from '@/lib/upload';
 import CheckinSection from '@/components/CheckinSection';
 import EventForm, { type EventFormData } from '@/components/EventForm';
@@ -40,23 +40,28 @@ export default function EOEditEvent() {
   });
 
   useEffect(() => {
-    if (event) {
-      setForm({
-        title: event.title || '',
-        description: event.description || '',
-        date_start: event.date_start ? new Date(event.date_start * 1000).toISOString().split('T')[0] : '',
-        date_end: event.date_end ? new Date(event.date_end * 1000).toISOString().split('T')[0] : '',
-        schedule_start: event.schedule_start || '',
-        schedule_end: event.schedule_end || '',
-        vanues_id: String(event.vanues_id || ''),
-        contents_id: String(event.contents_id || ''),
-        instagram_url: event.instagram_url || '',
-        website_url: event.website_url || '',
-        status: event.status ?? 2,
-        // approval_status read-only from event
-      });
-      if (event.image) setImagePreview(`${IMG_BASE}${event.image}`);
-    }
+    if (!event) return;
+
+    // Pre-populate from draft_data when there is a pending edit (so EO sees what they submitted),
+    // otherwise use live fields (covers approved, rejected, and edit-rejected cases)
+    const src = event.draft_data ?? event;
+
+    setForm({
+      title: src.title || '',
+      description: src.description || '',
+      date_start: src.date_start ? new Date(src.date_start * 1000).toISOString().split('T')[0] : '',
+      date_end: src.date_end ? new Date(src.date_end * 1000).toISOString().split('T')[0] : '',
+      schedule_start: src.schedule_start || '',
+      schedule_end: src.schedule_end || '',
+      vanues_id: String(src.vanues_id || ''),
+      contents_id: String(src.contents_id || ''),
+      instagram_url: src.instagram_url || '',
+      website_url: src.website_url || '',
+      status: src.status ?? 2,
+    });
+
+    // Show live image (not draft image) as the current image reference
+    if (event.image) setImagePreview(`${IMG_BASE}${event.image}`);
   }, [event]);
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -88,21 +93,43 @@ export default function EOEditEvent() {
 
   const updateMutation = useMutation({
     mutationFn: async () => {
-      let finalImage = event?.image || null;
+      // Upload new image to storage (if any) but store path in draft_data only
+      let draftImagePath: string | null = event?.image ?? null;
       if (imageFile) {
         const uploadedUrl = await uploadImageToBucket(imageFile, 'post-images', 'events');
         if (!uploadedUrl) throw new Error('Failed to upload image');
-        finalImage = uploadedUrl;
+        // Store relative path in draft
+        const supabaseBase = `${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/post-images/`;
+        draftImagePath = uploadedUrl.startsWith(supabaseBase) ? uploadedUrl.replace(supabaseBase, '') : uploadedUrl;
       }
-      const { error: updateError } = await supabase.from('ir_content_details').update({
-        title: form.title, description: form.description,
+
+      const draftData = {
+        title: form.title,
+        description: form.description,
         date_start: form.date_start ? Math.floor(new Date(form.date_start).getTime() / 1000) : null,
         date_end: form.date_end ? Math.floor(new Date(form.date_end).getTime() / 1000) : null,
         schedule_start: form.schedule_start ? Math.floor(new Date(`2000-01-01T${form.schedule_start}`).getTime() / 1000) : null,
         schedule_end: form.schedule_end ? Math.floor(new Date(`2000-01-01T${form.schedule_end}`).getTime() / 1000) : null,
-        vanues_id: Number(form.vanues_id), contents_id: Number(form.contents_id),
-        image: finalImage, instagram_url: form.instagram_url || null, website_url: form.website_url || null,
-        status: form.status, approval_status: 'pending', rejection_reason: null, updated_at: Math.floor(Date.now() / 1000),
+        vanues_id: Number(form.vanues_id),
+        contents_id: Number(form.contents_id),
+        instagram_url: form.instagram_url || null,
+        website_url: form.website_url || null,
+        status: form.status,
+        image: draftImagePath,
+      };
+
+      // Preserve existing draft_data.checkin_config so separate check-in draft saves aren't lost
+      const { data: currentRow } = await supabase.from('ir_content_details')
+        .select('draft_data').eq('id', Number(eventId)).single();
+      const existingCheckinConfig = currentRow?.draft_data?.checkin_config ?? null;
+      if (existingCheckinConfig) (draftData as any).checkin_config = existingCheckinConfig;
+
+      // Write only draft_data — approval_status stays 'approved' so event stays
+      // visible on mobile with current live data until admin applies the draft.
+      const { error: updateError } = await supabase.from('ir_content_details').update({
+        draft_data: draftData,
+        rejection_reason: null,
+        updated_at: Math.floor(Date.now() / 1000),
       }).eq('id', Number(eventId));
       if (updateError) throw updateError;
 
@@ -120,13 +147,19 @@ export default function EOEditEvent() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['eo', 'events'] });
+      queryClient.invalidateQueries({ queryKey: ['eo', 'event', eventId] });
       queryClient.invalidateQueries({ queryKey: ['eo', 'event', 'posters', eventId] });
       refetchPosters();
-      toast.success('Event updated');
+      toast.success('Changes submitted for review');
       navigate({ to: '/eo/events' });
     },
-    onError: () => toast.error('Failed to update'),
+    onError: () => toast.error('Failed to submit changes'),
   });
+
+  const approvalStatus = event?.approval_status;
+  const hasPendingDraft = !!event?.draft_data;
+  // Rejected: new event (status='rejected') OR edit rejected (status='approved', reason set, no draft)
+  const isRejected = approvalStatus === 'rejected' || (approvalStatus === 'approved' && !!event?.rejection_reason && !event?.draft_data);
 
   return (
     <div style={{ padding: '24px 28px 48px', maxWidth: 560, display: 'flex', flexDirection: 'column', gap: 20 }}>
@@ -136,6 +169,27 @@ export default function EOEditEvent() {
       </button>
 
       <h1 style={{ fontSize: 17, fontWeight: 600, color: '#ececec', letterSpacing: '-0.3px', lineHeight: 1 }}>Edit Event</h1>
+
+      {/* Approval status banner */}
+      {(approvalStatus === 'pending' || hasPendingDraft) && !isRejected && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)', borderRadius: 8 }}>
+          <Clock size={14} style={{ color: '#f59e0b', flexShrink: 0 }} />
+          <div>
+            <div style={{ fontSize: 12, fontWeight: 600, color: '#f59e0b' }}>Pending Review</div>
+            <div style={{ fontSize: 11, color: '#78716c', marginTop: 2 }}>Your changes have been submitted and are waiting for admin approval.</div>
+          </div>
+        </div>
+      )}
+      {isRejected && event?.rejection_reason && (
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '12px 16px', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: 8 }}>
+          <AlertCircle size={14} style={{ color: '#ef4444', flexShrink: 0, marginTop: 1 }} />
+          <div>
+            <div style={{ fontSize: 12, fontWeight: 600, color: '#ef4444' }}>Changes Rejected</div>
+            <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 2 }}>{event.rejection_reason}</div>
+            <div style={{ fontSize: 10, color: '#6b7280', marginTop: 4 }}>Update your changes below and resubmit.</div>
+          </div>
+        </div>
+      )}
 
       <form onSubmit={(e) => { e.preventDefault(); updateMutation.mutate(); }} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
         <EventForm
@@ -190,6 +244,9 @@ export default function EOEditEvent() {
             eventSlug={event.slug}
             apiBase={import.meta.env.VITE_API_BASE_URL ?? ''}
             token={authToken}
+            eoMode={true}
+            eventContentId={Number(eventId)}
+            draftCheckinConfig={event?.draft_data?.checkin_config ?? null}
           />
         )}
 
@@ -197,7 +254,7 @@ export default function EOEditEvent() {
           style={{ padding: '10px', background: updateMutation.isPending ? '#0d0d0d' : '#fff', border: updateMutation.isPending ? '1px solid #141414' : '1px solid transparent', borderRadius: 5, color: updateMutation.isPending ? '#2e2e2e' : '#000', fontSize: 12, fontWeight: 600, cursor: updateMutation.isPending ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
           {updateMutation.isPending
             ? <div style={{ width: 14, height: 14, border: '2px solid #222', borderTopColor: '#555', borderRadius: '50%' }} className="ds-spin" />
-            : <><Save size={12} /> Save Changes</>}
+            : <><Save size={12} /> Submit for Review</>}
         </button>
       </form>
     </div>

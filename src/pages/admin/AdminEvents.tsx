@@ -31,13 +31,13 @@ export default function AdminEvents() {
   const { data, isLoading } = useQuery({
     queryKey: ['admin', 'events', search, page, filter],
     queryFn: async () => {
-      let q = supabase.from('ir_content_details').select(`id, title, slug, image, status, approval_status, is_visible, is_trending, schedule_start, date_start, date_end, vanues_id, event_organizers_id`, { count: 'exact' }).order('created_at', { ascending: false }).range((page - 1) * limit, page * limit - 1);
+      let q = supabase.from('ir_content_details').select(`id, title, slug, image, status, approval_status, draft_data, is_visible, is_trending, schedule_start, date_start, date_end, vanues_id, event_organizers_id`, { count: 'exact' }).order('created_at', { ascending: false }).range((page - 1) * limit, page * limit - 1);
       if (search) q = q.ilike('title', `%${search}%`);
       if (filter === 'trending') q = q.eq('is_trending', 1);
       if (filter === 'upcoming') q = q.eq('status', 2).eq('approval_status', 'approved');
       if (filter === 'ongoing')  q = q.eq('status', 1).eq('approval_status', 'approved');
       if (filter === 'ended')    q = q.eq('status', 0);
-      if (filter === 'pending')  q = q.eq('approval_status', 'pending');
+      if (filter === 'pending')  q = q.or('approval_status.eq.pending,draft_data.not.is.null');
       if (filter === 'rejected') q = q.eq('approval_status', 'rejected');
       const { data: rows, count } = await q;
       const eoIds = [...new Set((rows || []).map((e) => e.event_organizers_id).filter(Boolean))];
@@ -135,7 +135,8 @@ export default function AdminEvents() {
                   <div style={{ width: 18, height: 18, border: '2px solid #1a1a1a', borderTopColor: '#444', borderRadius: '50%', margin: '0 auto' }} className="ds-spin" />
                 </td></tr>
               ) : (sortedEvents || []).map((event, i) => {
-                const approvalSt = event.approval_status !== 'approved' ? APPROVAL_STATUS[event.approval_status] : null;
+                const hasDraft = !!event.draft_data;
+                const approvalSt = hasDraft ? APPROVAL_STATUS['pending'] : (event.approval_status !== 'approved' ? APPROVAL_STATUS[event.approval_status] : null);
                 const st = STATUS[event.status] ?? STATUS[2];
                 return (
                   <tr key={event.id} style={{ borderBottom: i < ((sortedEvents?.length || 1) - 1) ? '1px solid #0f0f0f' : 'none', opacity: event.is_visible === 0 ? 0.5 : 1 }}>

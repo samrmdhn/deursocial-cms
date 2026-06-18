@@ -7,7 +7,6 @@ import toast from 'react-hot-toast';
 import { ArrowLeft, Send } from 'lucide-react';
 import { uploadImageToBucket } from '@/lib/upload';
 import EventPreviewCard from '@/components/EventPreviewCard';
-import EventDetailPreview from '@/components/EventDetailPreview';
 import EventForm, { type EventFormData } from '@/components/EventForm';
 
 export default function EOCreateEvent() {
@@ -22,7 +21,6 @@ export default function EOCreateEvent() {
   });
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
-  const [previewTab, setPreviewTab] = useState<'card' | 'detail'>('card');
 
   const { data: venues } = useQuery({ queryKey: ['venues-select'], queryFn: async () => { const { data } = await supabase.from('ir_vanues').select('id, title').order('title'); return data || []; } });
   const { data: typeContentDetails } = useQuery({ queryKey: ['type-content-details'], queryFn: async () => { const { data } = await supabase.from('ir_type_content_details').select('id, title'); return data || []; } });
@@ -107,22 +105,10 @@ export default function EOCreateEvent() {
       </div>
 
       <div style={{ position: 'sticky', top: 24, paddingTop: 8 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+        <div style={{ marginBottom: 12 }}>
           <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: '1px', textTransform: 'uppercase', color: '#555' }}>Live Preview</span>
-          <div style={{ display: 'flex', background: '#0a0a0a', border: '1px solid #1a1a1a', borderRadius: 5, padding: 3, gap: 3 }}>
-            {(['card', 'detail'] as const).map((tab) => (
-              <button key={tab} onClick={() => setPreviewTab(tab)}
-                style={{ padding: '4px 10px', borderRadius: 3, border: 'none', cursor: 'pointer', fontSize: 10, fontWeight: 500, background: previewTab === tab ? '#1e1e1e' : 'none', color: previewTab === tab ? '#d0d0d0' : '#555' }}>
-                {tab === 'card' ? 'Card' : 'Detail'}
-              </button>
-            ))}
-          </div>
         </div>
-        {previewTab === 'card' ? (
-          <EventPreviewCard form={{ ...form, status: 2 }} imagePreview={imagePreview} venues={venues} />
-        ) : (
-          <EventDetailPreview form={{ ...form, event_organizers_id: eoId?.toString() }} imagePreview={imagePreview} venues={venues} eos={[{ id: eoId || 0, name: user?.display_name || 'My EO' }]} />
-        )}
+        <EventPreviewCard form={{ ...form, status: 2 }} imagePreview={imagePreview} venues={venues} />
       </div>
     </div>
   );

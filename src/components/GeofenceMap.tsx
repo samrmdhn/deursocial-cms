@@ -15,9 +15,10 @@ export interface GeofenceConfig {
 interface Props {
   value: GeofenceConfig;
   onChange: (v: GeofenceConfig) => void;
+  polygonEnabled?: boolean;
 }
 
-export default function GeofenceMap({ value, onChange }: Props) {
+export default function GeofenceMap({ value, onChange, polygonEnabled = true }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<LeafletMap | null>(null);
   const circleRef = useRef<Circle | null>(null);
@@ -105,20 +106,22 @@ export default function GeofenceMap({ value, onChange }: Props) {
 
   return (
     <div className="space-y-3">
-      <div className="flex gap-2">
-        {(['radius', 'polygon'] as GeofenceMode[]).map((m) => (
-          <button
-            key={m}
-            type="button"
-            onClick={() => onChange({ ...value, mode: m })}
-            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-              mode === m ? 'bg-violet-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-white'
-            }`}
-          >
-            {m === 'radius' ? 'Radius (circle)' : 'Polygon (custom shape)'}
-          </button>
-        ))}
-      </div>
+      {polygonEnabled && (
+        <div className="flex gap-2">
+          {(['radius', 'polygon'] as GeofenceMode[]).map((m) => (
+            <button
+              key={m}
+              type="button"
+              onClick={() => onChange({ ...value, mode: m })}
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                mode === m ? 'bg-violet-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-white'
+              }`}
+            >
+              {m === 'radius' ? 'Radius (circle)' : 'Polygon (custom shape)'}
+            </button>
+          ))}
+        </div>
+      )}
       {/* Hidden input to pass current mode to map click handler */}
       <input id="geofence-mode-state" type="hidden" value={mode} />
       <div ref={containerRef} className="w-full h-64 rounded-xl overflow-hidden border border-slate-700/50" />
@@ -135,7 +138,7 @@ export default function GeofenceMap({ value, onChange }: Props) {
           />
         </div>
       )}
-      {value.mode === 'polygon' && value.polygon?.length > 0 && (
+      {polygonEnabled && value.mode === 'polygon' && value.polygon?.length > 0 && (
         <button
           type="button"
           onClick={() => onChange({ ...value, polygon: [] })}
