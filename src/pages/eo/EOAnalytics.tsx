@@ -1176,9 +1176,9 @@ export default function EOAnalytics() {
               (g.member_count ?? 0).toLocaleString(),
               g.max_members ? g.max_members.toLocaleString() : '∞',
             ]),
-            styles: { fontSize: 7, cellPadding: [2, 4], textColor: BODY as number[], fillColor: BG2 as number[], lineColor: BORDER as number[], lineWidth: 0.1 },
-            headStyles: { fillColor: SLATE as number[], textColor: WHITE as number[], fontStyle: 'bold', fontSize: 7, cellPadding: [2.5, 4] },
-            alternateRowStyles: { fillColor: [14, 15, 20] as number[] },
+            styles: { fontSize: 7, cellPadding: [2, 4], textColor: BODY, fillColor: BG2, lineColor: BORDER, lineWidth: 0.1 },
+            headStyles: { fillColor: SLATE, textColor: WHITE, fontStyle: 'bold', fontSize: 7, cellPadding: [2.5, 4] },
+            alternateRowStyles: { fillColor: [14, 15, 20] as [number, number, number] },
             margin: { left: M, right: M },
           });
           y = (doc as any).lastAutoTable.finalY + 6;
@@ -1206,7 +1206,7 @@ export default function EOAnalytics() {
   };
 
   // Fetch EO events for selector chips
-  const { data: events } = useQuery({
+  const { data: events } = useQuery<{ id: any; title: any; slug: any }[]>({
     queryKey: ['eo', 'events-list', eoId],
     queryFn: async () => {
       if (!eoId) return [];
@@ -1218,15 +1218,16 @@ export default function EOAnalytics() {
       return data ?? [];
     },
     enabled: !!eoId,
-    onSuccess: (data: any[]) => {
-      // Default to latest event on first load
-      if (selectedSlug === undefined && data.length > 0) {
-        setSelectedSlug(data[0].slug);
-      } else if (selectedSlug === undefined) {
-        setSelectedSlug(null);
-      }
-    },
   });
+
+  useEffect(() => {
+    if (!events) return;
+    if (selectedSlug === undefined && events.length > 0) {
+      setSelectedSlug(events[0].slug);
+    } else if (selectedSlug === undefined) {
+      setSelectedSlug(null);
+    }
+  }, [events]);
 
   // Effective slug: wait until defaulting is done
   const effectiveSlug = selectedSlug === undefined ? null : selectedSlug;
@@ -1311,7 +1312,7 @@ export default function EOAnalytics() {
   const topCities: { city_name: string; province_name: string; lat: number | null; lng: number | null; count: number }[] = analytics?.demographics?.top_cities ?? [];
   const maxCityCount = topCities[0]?.count || 1;
 
-  const citiesWithCoords = topCities.filter(c => c.lat != null && c.lng != null);
+  const citiesWithCoords = topCities.filter((c): c is { city_name: string; province_name: string; lat: number; lng: number; count: number } => c.lat != null && c.lng != null);
   const checkinCitiesRaw: { city_name: string; province_name: string; lat: number | null; lng: number | null; count: number; users?: CheckinUser[] }[] = analytics?.demographics?.checkin_cities ?? [];
   const checkinCitiesWithCoords = checkinCitiesRaw.filter(c => c.lat != null && c.lng != null);
   const maxCheckinCount = checkinCitiesRaw[0]?.count || 1;

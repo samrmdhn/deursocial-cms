@@ -28,7 +28,7 @@ export default function EOCheckinDashboard() {
       .eq('event_slug', eventSlug)
       .order('checked_in_at', { ascending: false })
       .limit(50);
-    setFeed((feedData as CheckinRow[]) ?? []);
+    setFeed((feedData as unknown as CheckinRow[]) ?? []);
 
     const { data: allCheckins } = await supabase.from('ir_event_checkins').select('day_index').eq('event_slug', eventSlug);
     const pd: Record<number, number> = {};

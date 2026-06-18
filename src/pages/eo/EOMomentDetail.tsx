@@ -373,7 +373,7 @@ export default function EOMomentDetail() {
                   </button>
                 )}
 
-                {replyingTo?.commentId === c.id && (
+                {replyingTo !== null && replyingTo.commentId === c.id && (
                   <div style={{ marginLeft: 24, marginTop: 6, display: 'flex', gap: 6 }}>
                     <input value={replyText} onChange={(e) => setReplyText(e.target.value)}
                       placeholder={`Reply to @${replyingTo.username}…`}
