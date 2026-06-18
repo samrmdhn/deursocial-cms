@@ -1,4 +1,11 @@
+function isMobile(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  return /android|iPad|iPhone|iPod/i.test(navigator.userAgent) &&
+    !(window as unknown as { MSStream?: unknown }).MSStream;
+}
+
 export default function NavBar() {
+  const mobile = isMobile();
   return (
     <header
       style={{
@@ -29,35 +36,37 @@ export default function NavBar() {
             style={{ height: 30, width: 'auto', display: 'block', filter: 'brightness(0) invert(1)' }}
           />
         </div>
-        <nav style={{ display: 'flex', alignItems: 'center', gap: 'clamp(16px, 2.4vw, 30px)' }}>
-          <a
-            href="#get"
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 8,
-              fontSize: 14,
-              fontWeight: 700,
-              color: '#0B0B0B',
-              background: '#F4F2EC',
-              textDecoration: 'none',
-              padding: '9px 18px',
-              borderRadius: 999,
-              whiteSpace: 'nowrap' as const,
-              transition: 'transform 0.15s ease, background 0.15s ease',
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.transform = 'scale(1.04)';
-              e.currentTarget.style.background = '#fff';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.transform = 'scale(1)';
-              e.currentTarget.style.background = '#F4F2EC';
-            }}
-          >
-            Get the app
-          </a>
-        </nav>
+        {!mobile && (
+          <nav style={{ display: 'flex', alignItems: 'center', gap: 'clamp(16px, 2.4vw, 30px)' }}>
+            <a
+              href="#get"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 8,
+                fontSize: 14,
+                fontWeight: 700,
+                color: '#0B0B0B',
+                background: '#F4F2EC',
+                textDecoration: 'none',
+                padding: '9px 18px',
+                borderRadius: 999,
+                whiteSpace: 'nowrap' as const,
+                transition: 'transform 0.15s ease, background 0.15s ease',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.transform = 'scale(1.04)';
+                e.currentTarget.style.background = '#fff';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = 'scale(1)';
+                e.currentTarget.style.background = '#F4F2EC';
+              }}
+            >
+              Get the app
+            </a>
+          </nav>
+        )}
       </div>
     </header>
   );
