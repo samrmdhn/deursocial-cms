@@ -5,10 +5,12 @@ import WhyAndFeatures from '@/components/landing/WhyAndFeatures';
 import FAQ from '@/components/landing/FAQ';
 import DownloadCTA from '@/components/landing/DownloadCTA';
 import Footer from '@/components/landing/Footer';
+import MobileAppBanner from '@/components/MobileAppBanner';
 
 export default function LandingPage() {
   return (
     <div style={{ fontFamily: 'NimbusSan, sans-serif', color: '#F4F2EC', background: '#0B0B0B', width: '100%', overflowX: 'hidden' }}>
+      <MobileAppBanner />
       <div style={{ position: 'relative', overflow: 'hidden' }}>
         <video
           autoPlay
