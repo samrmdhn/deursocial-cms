@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { Link } from '@tanstack/react-router';
 import toast from 'react-hot-toast';
-import { Search, TrendingUp, ChevronLeft, ChevronRight, ExternalLink, Image, Plus, CircleCheck, CircleX } from 'lucide-react';
+import { Search, TrendingUp, ChevronLeft, ChevronRight, ExternalLink, Image, Plus, CircleCheck, CircleX, BadgeCheck } from 'lucide-react';
 import { useTableSort } from '@/hooks/useTableSort';
 
 const IMG_BASE = `${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/post-images/`;
@@ -181,6 +181,15 @@ export default function AdminEvents() {
                         <TrendingUp size={14} />
                       </button>
                     </td>
+                    <td style={{ padding: '10px 18px' }}>
+                      <button
+                        onClick={() => toggleMutation.mutate({ id: event.id, field: 'is_collab', value: event.is_collab === 1 ? 0 : 1 })}
+                        title={event.is_collab === 1 ? 'Remove collab' : 'Set as collab'}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: event.is_collab === 1 ? '#3b82f6' : '#2a2a2a', padding: 4, display: 'flex', borderRadius: 3 }}
+                      >
+                        <BadgeCheck size={14} />
+                      </button>
+                    </td>
                     <td style={{ padding: '10px 18px', fontSize: 11, color: '#484848', whiteSpace: 'nowrap' }}>{formatDate(event.date_start)}</td>
                     <td style={{ padding: '10px 18px' }}>
                       <Link to="/admin/events/$eventId" params={{ eventId: String(event.id) }} style={{ background: 'none', border: 'none', color: '#333', cursor: 'pointer', padding: 4, display: 'flex', alignItems: 'center', borderRadius: 3, textDecoration: 'none' }}>
@@ -191,7 +200,7 @@ export default function AdminEvents() {
                 );
               })}
               {!isLoading && (sortedEvents?.length ?? 0) === 0 && (
-                <tr><td colSpan={8} style={{ padding: '40px 18px', textAlign: 'center', fontSize: 12, color: '#333' }}>No results</td></tr>
+                <tr><td colSpan={9} style={{ padding: '40px 18px', textAlign: 'center', fontSize: 12, color: '#333' }}>No results</td></tr>
               )}
             </tbody>
           </table>

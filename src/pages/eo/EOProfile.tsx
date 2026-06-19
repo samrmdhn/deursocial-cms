@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/stores/authStore';
 import toast from 'react-hot-toast';
-import { Save, Users, AtSign, Camera } from 'lucide-react';
+import { Save, Users, AtSign, Camera, BadgeCheck } from 'lucide-react';
 import { uploadImageToBucket } from '@/lib/upload';
 
 const IMG_BASE = `${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/post-images/`;
@@ -128,7 +128,14 @@ export default function EOProfile() {
           </div>
 
           <div>
-            <div style={{ fontSize: 14, fontWeight: 600, color: '#d8d8d8' }}>{eoInfo?.name || 'EO'}</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <div style={{ fontSize: 14, fontWeight: 600, color: '#d8d8d8' }}>{eoInfo?.name || 'EO'}</div>
+              {eoInfo?.is_partner === 1 && (
+                <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, fontWeight: 600, color: '#3b82f6' }}>
+                  <BadgeCheck size={13} /> Official Partner
+                </span>
+              )}
+            </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginTop: 4 }}>
               <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: '#484848' }}>
                 <AtSign size={11} /> {userInfo?.username || '—'}
