@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import toast from 'react-hot-toast';
-import { Plus, Trash2, X, UserCog } from 'lucide-react';
+import { Plus, Trash2, X, UserCog, BadgeCheck } from 'lucide-react';
 import bcryptjs from 'bcryptjs';
 import { useTableSort } from '@/hooks/useTableSort';
 
@@ -68,6 +68,15 @@ export default function AdminEOAccounts() {
     onError: () => toast.error('Failed'),
   });
 
+  const togglePartnerMutation = useMutation({
+    mutationFn: async ({ eoId, isPartner }: { eoId: number; isPartner: number }) => {
+      const { error } = await supabase.from('ir_event_organizers').update({ is_partner: isPartner, updated_at: Math.floor(Date.now() / 1000) }).eq('id', eoId);
+      if (error) throw error;
+    },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['admin', 'eo-accounts'] }); toast.success('Partner status updated'); },
+    onError: () => toast.error('Failed to update partner status'),
+  });
+
   const { sorted: sortedEOs, toggleSort, SortIcon } = useTableSort(eos, 'created_at' as any, 'desc');
 
   return (
@@ -92,16 +101,17 @@ export default function AdminEOAccounts() {
                 <th style={th}>Username</th>
                 <th style={th}>Email</th>
                 <th style={th}><button onClick={() => toggleSort('created_at' as any)} style={{ background: 'none', border: 'none', color: '#444', cursor: 'pointer', fontSize: 10, fontWeight: 500, letterSpacing: '0.8px', textTransform: 'uppercase', padding: 0, display: 'flex', alignItems: 'center' }}>Created <SortIcon col={'created_at' as any} /></button></th>
+                <th style={th}>Partner</th>
                 <th style={th}></th>
               </tr>
             </thead>
             <tbody>
               {isLoading ? (
-                <tr><td colSpan={5} style={{ padding: '48px 18px', textAlign: 'center' }}>
+                <tr><td colSpan={6} style={{ padding: '48px 18px', textAlign: 'center' }}>
                   <div style={{ width: 18, height: 18, border: '2px solid #1a1a1a', borderTopColor: '#444', borderRadius: '50%', margin: '0 auto' }} className="ds-spin" />
                 </td></tr>
               ) : (sortedEOs?.length ?? 0) === 0 ? (
-                <tr><td colSpan={5} style={{ padding: '40px 18px', textAlign: 'center', fontSize: 12, color: '#333' }}>No EO accounts yet</td></tr>
+                <tr><td colSpan={6} style={{ padding: '40px 18px', textAlign: 'center', fontSize: 12, color: '#333' }}>No EO accounts yet</td></tr>
               ) : sortedEOs?.map((entry, i) => (
                 <tr key={entry.id} style={{ borderBottom: i < (sortedEOs.length - 1) ? '1px solid #0f0f0f' : 'none' }}>
                   <td style={{ padding: '10px 18px' }}>
@@ -119,6 +129,14 @@ export default function AdminEOAccounts() {
                   <td style={{ padding: '10px 18px', fontSize: 11, color: '#555' }}>{entry.user?.email || '—'}</td>
                   <td style={{ padding: '10px 18px', fontSize: 11, color: '#484848' }}>
                     {entry.created_at ? new Date(entry.created_at * 1000).toLocaleDateString('id-ID') : '—'}
+                  </td>
+                  <td style={{ padding: '10px 18px' }}>
+                    <button
+                      onClick={() => entry.eo && togglePartnerMutation.mutate({ eoId: entry.eo.id, isPartner: entry.eo.is_partner === 1 ? 0 : 1 })}
+                      title={entry.eo?.is_partner === 1 ? 'Remove partner status' : 'Set as partner'}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, display: 'flex', borderRadius: 3, color: entry.eo?.is_partner === 1 ? '#3b82f6' : '#333' }}>
+                      <BadgeCheck size={15} />
+                    </button>
                   </td>
                   <td style={{ padding: '10px 18px' }}>
                     <button onClick={() => { if (confirm('Remove EO access?')) deleteMutation.mutate(entry.id); }}

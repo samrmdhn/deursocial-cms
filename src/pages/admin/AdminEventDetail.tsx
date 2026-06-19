@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useParams, Link } from '@tanstack/react-router';
 import { supabase } from '@/lib/supabase';
 import toast from 'react-hot-toast';
-import { ArrowLeft, TrendingUp, Eye, EyeOff, Handshake, Users, MessageSquare, Calendar, MapPin, CheckCircle, XCircle } from 'lucide-react';
+import { ArrowLeft, TrendingUp, Eye, EyeOff, Handshake, Users, MessageSquare, Calendar, MapPin, CheckCircle, XCircle, BadgeCheck } from 'lucide-react';
 import { useState } from 'react';
 
 const IMG_BASE = `${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/post-images/`;
@@ -254,7 +254,7 @@ export default function AdminEventDetail() {
       )}
 
       {/* Toggles */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 8 }}>
         <button onClick={() => toggleMutation.mutate({ field: 'is_visible', value: event.is_visible === 0 ? 1 : 0 })}
           style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 16px', background: event.is_visible === 0 ? '#1a0a0a' : '#0a0a0a', border: `1px solid ${event.is_visible === 0 ? '#2a1010' : '#1a1a1a'}`, borderRadius: 6, cursor: 'pointer', textAlign: 'left' }}>
           {event.is_visible === 0 ? <EyeOff size={16} style={{ color: '#cc4444', flexShrink: 0 }} /> : <Eye size={16} style={{ color: '#22c55e', flexShrink: 0 }} />}
@@ -272,6 +272,15 @@ export default function AdminEventDetail() {
           <div>
             <div style={{ fontSize: 12, fontWeight: 500, color: event.is_trending === 1 ? '#c08020' : '#888' }}>Trending</div>
             <div style={{ fontSize: 10, color: '#555', marginTop: 1 }}>{event.is_trending === 1 ? 'Active' : 'Inactive'}</div>
+          </div>
+        </button>
+
+        <button onClick={() => toggleMutation.mutate({ field: 'is_collab', value: event.is_collab === 1 ? 0 : 1 })}
+          style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 16px', background: event.is_collab === 1 ? '#001228' : '#0a0a0a', border: `1px solid ${event.is_collab === 1 ? '#0a2040' : '#1a1a1a'}`, borderRadius: 6, cursor: 'pointer', textAlign: 'left' }}>
+          <BadgeCheck size={16} style={{ color: event.is_collab === 1 ? '#3b82f6' : '#444', flexShrink: 0 }} />
+          <div>
+            <div style={{ fontSize: 12, fontWeight: 500, color: event.is_collab === 1 ? '#3b82f6' : '#888' }}>Collab</div>
+            <div style={{ fontSize: 10, color: '#555', marginTop: 1 }}>{event.is_collab === 1 ? 'Active' : 'Inactive'}</div>
           </div>
         </button>
 
