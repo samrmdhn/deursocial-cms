@@ -42,11 +42,12 @@ const CHART_COLORS = {
 };
 
 const SOURCE_COLORS: Record<string, string> = {
-  homepage: '#4a9eff',
-  share: '#e8e8e8',
-  trending: '#f0a500',
-  search: '#4caf50',
-  direct: '#555',
+  events:  '#4a9eff',
+  search:  '#4caf50',
+  share:   '#e8e8e8',
+  post:    '#a78bfa',
+  moment:  '#f472b6',
+  lineup:  '#f0a500',
 };
 
 // ─── Skeleton ────────────────────────────────────────────────────────────────
@@ -1092,7 +1093,7 @@ export default function EOAnalytics() {
       heading('Traffic Sources');
       desc('How users discovered your event — informs which channels to double down on for future events.');
       hBar(
-        ['homepage', 'share', 'trending', 'search', 'direct'].map(s => ({
+        ['events', 'search', 'share', 'post', 'moment', 'lineup'].map(s => ({
           label: s.charAt(0).toUpperCase() + s.slice(1),
           value: analytics.traffic_sources?.[s] ?? 0,
         })),
@@ -1259,7 +1260,7 @@ export default function EOAnalytics() {
   ];
 
   // Traffic sources bar data
-  const sourceData = ['homepage', 'share', 'trending', 'search', 'direct'].map(s => ({
+  const sourceData = ['events', 'search', 'share', 'post', 'moment', 'lineup'].map(s => ({
     name: s,
     value: analytics?.traffic_sources?.[s] ?? 0,
   }));
@@ -1292,7 +1293,7 @@ export default function EOAnalytics() {
     analytics?.followers_per_day_by_platform ?? [], 'date', 'platform', ['ios', 'android', 'unknown']
   );
   const followersDayBySourceData = buildStacked(
-    analytics?.followers_per_day_by_source ?? [], 'date', 'source', ['homepage', 'share', 'trending', 'search', 'direct']
+    analytics?.followers_per_day_by_source ?? [], 'date', 'source', ['events', 'search', 'share', 'post', 'moment', 'lineup']
   );
 
   // Views per day — stacked
@@ -1300,7 +1301,7 @@ export default function EOAnalytics() {
     analytics?.impressions_per_day_by_platform ?? [], 'date', 'platform', ['ios', 'android', 'unknown']
   );
   const impressionsDayBySourceData = buildStacked(
-    analytics?.impressions_per_day_by_source ?? [], 'date', 'source', ['homepage', 'share', 'trending', 'search', 'direct']
+    analytics?.impressions_per_day_by_source ?? [], 'date', 'source', ['events', 'search', 'share', 'post', 'moment', 'lineup']
   );
 
   // Monthly series
@@ -1406,7 +1407,7 @@ export default function EOAnalytics() {
                     <div style={{ flex: 1, background: '#111', borderRadius: 2, height: 6, overflow: 'hidden' }}>
                       <div style={{ height: '100%', borderRadius: 2, background: SOURCE_COLORS[s.name] ?? '#555', width: `${pct}%` }} />
                     </div>
-                    <div style={{ width: 32, fontSize: 10, color: '#555', textAlign: 'right' }}>{pct}%</div>
+                    <div style={{ width: 80, fontSize: 10, color: '#555', textAlign: 'right', whiteSpace: 'nowrap' }}>{s.value.toLocaleString()} ({pct}%)</div>
                   </div>
                 );
               })}
