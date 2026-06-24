@@ -19,7 +19,7 @@ import DeepLinkRedirect from '@/components/DeepLinkRedirect';
 // ── Deeplink wrapper components ──
 function EventDeepLink() {
   const { slug } = useParams({ strict: false }) as { slug: string };
-  return <DeepLinkRedirect deepLink={`deursocial://event/${slug}?source=share`} />;
+  return <DeepLinkRedirect deepLink={`deursocial://event/${slug}`} />;
 }
 function EventPostDeepLink() {
   const { slug, postSlug } = useParams({ strict: false }) as { slug: string; postSlug: string };
@@ -41,6 +41,34 @@ function ProfileDeepLink() {
   const { username } = useParams({ strict: false }) as { username: string };
   const { passport } = useSearch({ strict: false }) as { passport?: string };
   const deepLink = `deursocial://profile/${username}${passport ? `?passport=${passport}` : ''}`;
+  return <DeepLinkRedirect deepLink={deepLink} />;
+}
+
+// ── Share deeplink wrapper components (/s/* routes — not intercepted by universal links) ──
+function EventShareDeepLink() {
+  const { slug } = useParams({ strict: false }) as { slug: string };
+  return <DeepLinkRedirect deepLink={`deursocial://event/${slug}?source=share`} />;
+}
+function EventPostShareDeepLink() {
+  const { slug, postSlug } = useParams({ strict: false }) as { slug: string; postSlug: string };
+  return <DeepLinkRedirect deepLink={`deursocial://event/${slug}/posts/${postSlug}?source=share`} />;
+}
+function EventMomentShareDeepLink() {
+  const { slug, momentSlug } = useParams({ strict: false }) as { slug: string; momentSlug: string };
+  return <DeepLinkRedirect deepLink={`deursocial://event/${slug}/moments/${momentSlug}?source=share`} />;
+}
+function GroupShareDeepLink() {
+  const { slug } = useParams({ strict: false }) as { slug: string };
+  return <DeepLinkRedirect deepLink={`deursocial://group/${slug}?source=share`} />;
+}
+function OrganizerShareDeepLink() {
+  const { id } = useParams({ strict: false }) as { id: string };
+  return <DeepLinkRedirect deepLink={`deursocial://organizer/${id}?source=share`} />;
+}
+function ProfileShareDeepLink() {
+  const { username } = useParams({ strict: false }) as { username: string };
+  const { passport } = useSearch({ strict: false }) as { passport?: string };
+  const deepLink = `deursocial://profile/${username}?source=share${passport ? `&passport=${passport}` : ''}`;
   return <DeepLinkRedirect deepLink={deepLink} />;
 }
 import AdminDashboard from '@/pages/admin/AdminDashboard';
@@ -146,6 +174,46 @@ const profileRoute = createRoute({
     passport: typeof search.passport === 'string' ? search.passport : undefined,
   }),
   component: ProfileDeepLink,
+});
+
+// ── Share routes (/s/* — excluded from universal links so CMS always handles them) ──
+const eventShareRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/s/event/$slug',
+  component: EventShareDeepLink,
+});
+
+const eventPostShareRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/s/event/$slug/posts/$postSlug',
+  component: EventPostShareDeepLink,
+});
+
+const eventMomentShareRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/s/event/$slug/moments/$momentSlug',
+  component: EventMomentShareDeepLink,
+});
+
+const groupShareRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/s/group/$slug',
+  component: GroupShareDeepLink,
+});
+
+const organizerShareRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/s/organizer/$id',
+  component: OrganizerShareDeepLink,
+});
+
+const profileShareRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/s/profile/$username',
+  validateSearch: (search: Record<string, unknown>) => ({
+    passport: typeof search.passport === 'string' ? search.passport : undefined,
+  }),
+  component: ProfileShareDeepLink,
 });
 
 const privacyPolicyRoute = createRoute({
@@ -401,6 +469,13 @@ const routeTree = rootRoute.addChildren([
   profileRoute,
   privacyPolicyRoute,
   termsConditionRoute,
+  // Share routes (/s/* — always go through CMS, never intercepted by universal links)
+  eventShareRoute,
+  eventPostShareRoute,
+  eventMomentShareRoute,
+  groupShareRoute,
+  organizerShareRoute,
+  profileShareRoute,
   adminLayoutRoute.addChildren([
     adminDashboardRoute,
     adminEventsRoute,
