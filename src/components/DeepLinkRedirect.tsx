@@ -7,7 +7,7 @@ function isIOS(): boolean {
   return /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as unknown as { MSStream?: unknown }).MSStream;
 }
 
-export default function DeepLinkRedirect({ deepLink }: { deepLink: string }) {
+export default function DeepLinkRedirect({ deepLink, onRedirected }: { deepLink: string; onRedirected?: () => void }) {
   const [showFallback, setShowFallback] = useState(false);
 
   useEffect(() => {
@@ -17,6 +17,7 @@ export default function DeepLinkRedirect({ deepLink }: { deepLink: string }) {
     const onVisibilityChange = () => {
       if (document.visibilityState === 'hidden') {
         clearTimeout(timer);
+        onRedirected?.();
       }
     };
 

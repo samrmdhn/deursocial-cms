@@ -8,6 +8,7 @@ import {
   useSearch,
 } from '@tanstack/react-router';
 import { useAuthStore } from '@/stores/authStore';
+import api from '@/lib/api';
 
 import CMSLayout from '@/layouts/CMSLayout';
 import LoginPage from '@/pages/LoginPage';
@@ -19,7 +20,14 @@ import DeepLinkRedirect from '@/components/DeepLinkRedirect';
 // ── Deeplink wrapper components ──
 function EventDeepLink() {
   const { slug } = useParams({ strict: false }) as { slug: string };
-  return <DeepLinkRedirect deepLink={`deursocial://event/${slug}`} />;
+  return (
+    <DeepLinkRedirect
+      deepLink={`deursocial://event/${slug}`}
+      onRedirected={() => {
+        api.post(`/event/${slug}/impression`, { source: 'share', platform: 'web' }).catch(() => {});
+      }}
+    />
+  );
 }
 function EventPostDeepLink() {
   const { slug, postSlug } = useParams({ strict: false }) as { slug: string; postSlug: string };
