@@ -1093,10 +1093,14 @@ export default function EOAnalytics() {
       heading('Traffic Sources');
       desc('How users discovered your event — informs which channels to double down on for future events.');
       hBar(
-        ['events', 'search', 'share', 'post', 'moment', 'lineup'].map(s => ({
-          label: s.charAt(0).toUpperCase() + s.slice(1),
-          value: analytics.traffic_sources?.[s] ?? 0,
-        })),
+        [
+          { label: 'Events',  value: (analytics.traffic_sources?.events  ?? 0) + (analytics.traffic_sources?.homepage ?? 0) },
+          { label: 'Search',  value:  analytics.traffic_sources?.search  ?? 0 },
+          { label: 'Share',   value:  analytics.traffic_sources?.share   ?? 0 },
+          { label: 'Post',    value:  analytics.traffic_sources?.post    ?? 0 },
+          { label: 'Moment',  value:  analytics.traffic_sources?.moment  ?? 0 },
+          { label: 'Lineup',  value: (analytics.traffic_sources?.lineup  ?? 0) + (analytics.traffic_sources?.trending ?? 0) },
+        ],
         BLUE,
       );
 
@@ -1260,10 +1264,15 @@ export default function EOAnalytics() {
   ];
 
   // Traffic sources bar data
-  const sourceData = ['events', 'search', 'share', 'post', 'moment', 'lineup'].map(s => ({
-    name: s,
-    value: analytics?.traffic_sources?.[s] ?? 0,
-  }));
+  const ts = analytics?.traffic_sources ?? {};
+  const sourceData = [
+    { name: 'events',  value: (ts.events  ?? 0) + (ts.homepage ?? 0) },
+    { name: 'search',  value:  ts.search  ?? 0 },
+    { name: 'share',   value:  ts.share   ?? 0 },
+    { name: 'post',    value:  ts.post    ?? 0 },
+    { name: 'moment',  value:  ts.moment  ?? 0 },
+    { name: 'lineup',  value: (ts.lineup  ?? 0) + (ts.trending ?? 0) },
+  ];
 
   // Platform totals
   const iosCount = analytics?.platform_split?.ios ?? 0;
